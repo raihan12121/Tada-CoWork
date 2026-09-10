@@ -88,6 +88,8 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
             f'    </Component>'
         )
 
+    icon_abs = str((BASE_DIR / "desktop" / "icon.ico").resolve())
+
     # Shortcuts components
     desktop_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "coagent.desktop.shortcut"))
     menu_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "coagent.menu.shortcut"))
@@ -97,11 +99,11 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
 
     shortcut_components = [
         f'    <Component Id="cmp_desktop_shortcut" Directory="DesktopFolder" Guid="{desktop_guid}">\n'
-        f'      <Shortcut Id="DesktopShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Orchestrator" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" />\n'
+        f'      <Shortcut Id="DesktopShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Application" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
         f'      <RegistryValue Root="HKCU" Key="Software\\Coagent" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
         f'    </Component>',
         f'    <Component Id="cmp_menu_shortcut" Directory="ProgramMenuFolder" Guid="{menu_guid}">\n'
-        f'      <Shortcut Id="StartMenuShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Orchestrator" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" />\n'
+        f'      <Shortcut Id="StartMenuShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Application" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
         f'      <RegistryValue Root="HKCU" Key="Software\\Coagent" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
         f'    </Component>'
     ]
@@ -113,11 +115,13 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
         '     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">',
         '  <Package Name="Coagent"',
         '           Manufacturer="Coagent"',
-        '           Version="1.0.0"',
+        '           Version="1.0.1"',
         '           UpgradeCode="4A1B2C3D-E5F6-7890-ABCD-EF1234567890"',
         '           Scope="perMachine">',
         '    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />',
         '    <MediaTemplate EmbedCab="yes" />',
+        f'    <Icon Id="AppIcon.ico" SourceFile="{icon_abs}" />',
+        '    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />',
         '',
         '    <StandardDirectory Id="ProgramFiles64Folder">',
         '      <Directory Id="INSTALLFOLDER" Name="Coagent">',

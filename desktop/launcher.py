@@ -3,14 +3,12 @@ import sys
 import time
 import socket
 import urllib.request
-import json
-import webbrowser
 import threading
 import traceback
 import ctypes
 from pathlib import Path
 
-# Setup base paths
+# Setup base directories
 if getattr(sys, "frozen", False):
     ROOT_DIR = Path(sys._MEIPASS)
     EXE_DIR = Path(sys.executable).parent
@@ -27,26 +25,28 @@ USER_DATA_DIR = Path(os.getenv("APPDATA", Path.home())) / "Coagent"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["COAGENT_DATA_DIR"] = str(USER_DATA_DIR)
 
-# Switch working directory to user data dir so any relative writes go to AppData
 try:
     os.chdir(str(USER_DATA_DIR))
 except Exception:
     pass
 
-def is_coagent_running(port: int = 8000) -> bool:
-    """Check if another Coagent instance is already running on port."""
+WINDOW_TITLE = "Coagent"
+
+def bring_existing_window_to_foreground() -> bool:
+    """If an existing Coagent desktop window is running, focus it and return True."""
     try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                return "Coagent" in data.get("service", "")
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, WINDOW_TITLE)
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+            return True
     except Exception:
-        return False
+        pass
     return False
 
-def find_available_port(start_port: int = 8000, max_attempts: int = 20) -> int:
-    """Find the first available TCP port."""
+def find_available_port(start_port: int = 8000, max_attempts: int = 30) -> int:
+    """Find the first available localhost TCP port."""
     for p in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -56,50 +56,70 @@ def find_available_port(start_port: int = 8000, max_attempts: int = 20) -> int:
                 continue
     return start_port
 
-def open_browser(port: int):
-    time.sleep(1.0)
-    url = f"http://127.0.0.1:{port}/"
-    print(f"[Coagent Desktop] Opening browser interface at: {url}")
-    webbrowser.open(url)
+def wait_for_backend_ready(port: int, max_wait: float = 4.0) -> bool:
+    """Poll localhost health endpoint until the server is ready."""
+    start = time.time()
+    while time.time() - start < max_wait:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.08)
+    return False
 
 def show_error_dialog(title: str, message: str):
-    """Show native Windows error dialog."""
+    """Show native Windows error message box."""
     try:
         ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # MB_ICONERROR
     except Exception:
-        print(f"[{title}] {message}", file=sys.stderr)
+        pass
 
 def main():
-    print("=" * 65)
-    print("   Coagent (Tada-CoWork) — Autonomous Work Agent")
-    print("   Version: 1.0.0 (Windows PC Desktop Edition)")
-    print("=" * 65)
-    print(f"[Coagent] Working data directory: {USER_DATA_DIR.resolve()}")
-
-    target_port = 8000
-
-    # 1. Check if Coagent is already running
-    if is_coagent_running(target_port):
-        print(f"[Coagent] An active instance of Coagent is already running on port {target_port}.")
-        print(f"[Coagent] Bringing up the application in your browser...")
-        open_browser(target_port)
-        time.sleep(1.5)
+    # 1. Check if another instance is already running
+    if bring_existing_window_to_foreground():
         sys.exit(0)
 
-    # 2. Check if port is free or find an open port
-    available_port = find_available_port(target_port)
-    if available_port != target_port:
-        print(f"[Coagent] Port {target_port} is busy. Switched to port {available_port}.")
+    # 2. Pick open port
+    port = find_available_port(8000)
 
-    # 3. Schedule browser opening
-    threading.Thread(target=open_browser, args=(available_port,), daemon=True).start()
-
-    # 4. Import application & boot uvicorn
+    # 3. Start backend orchestrator in daemon thread
     import uvicorn
     from app.main import app
 
-    print(f"[Coagent] Starting local orchestrator service on http://127.0.0.1:{available_port}...")
-    uvicorn.run(app, host="127.0.0.1", port=available_port, log_level="info")
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="error",
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
+
+    # Wait for server ready
+    wait_for_backend_ready(port)
+
+    # 4. Create and launch native desktop window (Edge Chromium WebView2)
+    import webview
+
+    window = webview.create_window(
+        title=WINDOW_TITLE,
+        url=f"http://127.0.0.1:{port}/",
+        width=1340,
+        height=880,
+        min_size=(960, 640),
+        background_color="#0b0f17",
+    )
+
+    # Start native UI event loop
+    webview.start(gui="edgechromium", debug=False)
+
+    # 5. Clean shutdown when window is closed
+    server.should_exit = True
+    sys.exit(0)
 
 if __name__ == "__main__":
     try:
@@ -113,6 +133,6 @@ if __name__ == "__main__":
             pass
         show_error_dialog(
             "Coagent Startup Error",
-            f"Coagent failed to start.\n\nError: {exc}\n\nLog saved to:\n{crash_log}\n\nPlease check the log file or restart your computer."
+            f"Coagent encountered an error and could not start.\n\nError: {exc}\n\nDetails saved to:\n{crash_log}"
         )
         sys.exit(1)
