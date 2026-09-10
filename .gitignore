@@ -43,6 +43,7 @@ frontend/dist-ssr/
 
 # Sandboxes & Local Storage
 sandboxes/
+data/
 *.sqlite3
 *.db
 *.log

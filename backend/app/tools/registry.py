@@ -6,6 +6,9 @@ from app.tools.doc_gen import CreateDocumentTool
 from app.tools.web_search import WebSearchTool
 from app.tools.web_fetch import WebFetchTool
 from app.tools.communication import SendEmailTool, SendSlackMessageTool
+from app.connectors.google_drive import GoogleDriveConnector
+from app.connectors.github import GitHubConnector
+from app.connectors.slack import SlackConnector, WebhookConnector
 
 class ToolRegistry:
     def __init__(self):
@@ -23,7 +26,11 @@ class ToolRegistry:
             WebSearchTool(),
             WebFetchTool(),
             SendEmailTool(),
-            SendSlackMessageTool()
+            SendSlackMessageTool(),
+            GoogleDriveConnector(),
+            GitHubConnector(),
+            SlackConnector(),
+            WebhookConnector()
         ]
         for t in default_tools:
             self.register_tool(t)
