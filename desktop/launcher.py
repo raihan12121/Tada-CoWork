@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import time
 import socket
 import urllib.request
@@ -8,7 +9,49 @@ import traceback
 import ctypes
 from pathlib import Path
 
-# Setup base directories
+# 1. Setup user data directory first
+USER_DATA_DIR = Path(os.getenv("APPDATA", Path.home())) / "Coagent"
+USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["COAGENT_DATA_DIR"] = str(USER_DATA_DIR)
+
+def log_debug(msg: str):
+    try:
+        with open(USER_DATA_DIR / "launcher.log", "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+# 2. In GUI mode (console=False on Windows), sys.stdout and sys.stderr are None.
+# Redirect them to persistent log files so isatty() and write() never fail.
+if sys.stdout is None:
+    try:
+        sys.stdout = open(USER_DATA_DIR / "app_output.log", "a", encoding="utf-8", buffering=1)
+    except Exception:
+        sys.stdout = io.StringIO()
+
+if sys.stderr is None:
+    try:
+        sys.stderr = open(USER_DATA_DIR / "app_error.log", "a", encoding="utf-8", buffering=1)
+    except Exception:
+        sys.stderr = io.StringIO()
+
+# 3. Named Mutex for single-instance enforcement
+ERROR_ALREADY_EXISTS = 183
+kernel32 = ctypes.windll.kernel32
+mutex_handle = kernel32.CreateMutexW(None, False, "Local\\CoagentDesktopAppMutex_2026")
+if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+    log_debug("Another instance of Coagent is already running. Focusing existing window.")
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, "Coagent")
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    sys.exit(0)
+
+# 4. Setup base directories
 if getattr(sys, "frozen", False):
     ROOT_DIR = Path(sys._MEIPASS)
     EXE_DIR = Path(sys.executable).parent
@@ -20,30 +63,12 @@ BACKEND_DIR = ROOT_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# Ensure writable data directory in %APPDATA%/Coagent
-USER_DATA_DIR = Path(os.getenv("APPDATA", Path.home())) / "Coagent"
-USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["COAGENT_DATA_DIR"] = str(USER_DATA_DIR)
-
 try:
     os.chdir(str(USER_DATA_DIR))
 except Exception:
     pass
 
 WINDOW_TITLE = "Coagent"
-
-def bring_existing_window_to_foreground() -> bool:
-    """If an existing Coagent desktop window is running, focus it and return True."""
-    try:
-        user32 = ctypes.windll.user32
-        hwnd = user32.FindWindowW(None, WINDOW_TITLE)
-        if hwnd:
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
-            return True
-    except Exception:
-        pass
-    return False
 
 def find_available_port(start_port: int = 8000, max_attempts: int = 30) -> int:
     """Find the first available localhost TCP port."""
@@ -56,7 +81,7 @@ def find_available_port(start_port: int = 8000, max_attempts: int = 30) -> int:
                 continue
     return start_port
 
-def wait_for_backend_ready(port: int, max_wait: float = 4.0) -> bool:
+def wait_for_backend_ready(port: int, max_wait: float = 6.0) -> bool:
     """Poll localhost health endpoint until the server is ready."""
     start = time.time()
     while time.time() - start < max_wait:
@@ -77,14 +102,11 @@ def show_error_dialog(title: str, message: str):
         pass
 
 def main():
-    # 1. Check if another instance is already running
-    if bring_existing_window_to_foreground():
-        sys.exit(0)
-
-    # 2. Pick open port
+    log_debug("=== Coagent Desktop Launcher Started ===")
     port = find_available_port(8000)
+    log_debug(f"Assigned localhost port: {port}")
 
-    # 3. Start backend orchestrator in daemon thread
+    # Start FastAPI backend orchestrator in background thread
     import uvicorn
     from app.main import app
 
@@ -92,19 +114,23 @@ def main():
         app,
         host="127.0.0.1",
         port=port,
-        log_level="error",
+        log_config=None,
         access_log=False,
     )
     server = uvicorn.Server(config)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
 
-    # Wait for server ready
-    wait_for_backend_ready(port)
+    log_debug("Waiting for backend orchestrator readiness...")
+    if wait_for_backend_ready(port):
+        log_debug("Backend orchestrator is ready and healthy.")
+    else:
+        log_debug("Warning: Backend readiness check timed out. Launching webview anyway.")
 
-    # 4. Create and launch native desktop window (Edge Chromium WebView2)
+    # Create and launch native Edge Chromium WebView2 window
     import webview
 
+    log_debug("Creating WebView2 window...")
     window = webview.create_window(
         title=WINDOW_TITLE,
         url=f"http://127.0.0.1:{port}/",
@@ -114,10 +140,11 @@ def main():
         background_color="#0b0f17",
     )
 
-    # Start native UI event loop
+    log_debug("Starting WebView2 native window loop...")
     webview.start(gui="edgechromium", debug=False)
+    log_debug("WebView2 window closed by user. Shutting down Coagent.")
 
-    # 5. Clean shutdown when window is closed
+    # Clean shutdown
     server.should_exit = True
     sys.exit(0)
 
@@ -131,6 +158,7 @@ if __name__ == "__main__":
             crash_log.write_text(err_msg, encoding="utf-8")
         except Exception:
             pass
+        log_debug(f"FATAL STARTUP EXCEPTION: {exc}\n{err_msg}")
         show_error_dialog(
             "Coagent Startup Error",
             f"Coagent encountered an error and could not start.\n\nError: {exc}\n\nDetails saved to:\n{crash_log}"

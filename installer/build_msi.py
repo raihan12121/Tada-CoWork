@@ -115,7 +115,7 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
         '     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">',
         '  <Package Name="Coagent"',
         '           Manufacturer="Coagent"',
-        '           Version="1.0.1"',
+        '           Version="1.0.2"',
         '           UpgradeCode="4A1B2C3D-E5F6-7890-ABCD-EF1234567890"',
         '           Scope="perMachine">',
         '    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />',
