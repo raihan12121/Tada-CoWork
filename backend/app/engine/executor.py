@@ -14,6 +14,7 @@ from app.core.llm import get_llm_client
 from app.tools.registry import tool_registry
 from app.engine.approval_gate import approval_gate_manager
 from app.engine.planner import planner_engine
+from app.engine.task_graph import task_graph_engine
 from app.memory.working_memory import WorkingMemory
 from app.config import settings
 
@@ -30,6 +31,7 @@ class ExecutorSession:
         self._pause_event = asyncio.Event()
         self._pause_event.set() # Not paused initially
         self.tool_calls_count = 0
+        self._lock = asyncio.Lock()
 
     async def emit_event(
         self,
@@ -67,8 +69,8 @@ class ExecutorSession:
 
     async def run_plan(self, plan: PlanModel, task: str) -> bool:
         """
-        Executes the plan steps in sequence, respecting DAG dependencies,
-        approval gates, and prompt-injection defenses.
+        Executes the plan using the Task Graph Engine. Identifies independent branches
+        and fans out parallel sub-agent executor loops, followed by an explicit merge step (Phase 6).
         """
         await self.emit_event(
             "narration",
@@ -77,151 +79,190 @@ class ExecutorSession:
         )
 
         prior_observations: List[Dict[str, Any]] = []
+        tiers = task_graph_engine.compute_execution_tiers(plan.steps)
 
-        for step in plan.steps:
-            # Check pause & cancel states
+        for tier_idx, tier in enumerate(tiers, 1):
             await self._pause_event.wait()
             if self.is_cancelled:
-                await self.emit_event("narration", "Task execution was cancelled by user.", {"step_id": step.id})
+                await self.emit_event("narration", "Task execution was cancelled by user.")
                 return False
 
-            if step.status in ("completed", "skipped"):
-                continue
-
-            # Update step status to running
-            step.status = "running"
-            await self._update_step_db(step)
-            await self.emit_event(
-                "narration",
-                f"Starting: {step.description}",
-                {"step_id": step.id, "tool": step.tool},
-                step_id=step.id
-            )
-
-            # ReAct Reason pass
-            reasoning = await self.llm.reason_step(
-                task=task,
-                step=step,
-                prior_observations=prior_observations,
-                tools_available=tool_registry.list_tools()
-            )
-
-            await self.emit_event(
-                "reasoning",
-                reasoning.get("narration", f"Reasoning about step: {step.description}"),
-                {"thought": reasoning.get("thought"), "tool": reasoning.get("tool"), "params": reasoning.get("params")},
-                step_id=step.id
-            )
-
-            tool_name = reasoning.get("tool", step.tool)
-            tool_params = reasoning.get("params", {})
-
-            # Enforce Risk Tier & Approval Gate (rules.md §2)
-            pre_approved = approval_gate_manager.get_pre_approved_classes(self.session_id)
-            risk_level, requires_approval, consequence = safety_engine.classify_tool_risk(
-                tool_name=tool_name,
-                input_params=tool_params,
-                pre_approved_medium_classes=pre_approved
-            )
-
-            if requires_approval:
+            if task_graph_engine.is_parallel_tier(tier):
+                # Multi-Workstream Parallelism (Phase 6 / TRD FR-4)
+                sub_agent_names = [f"SubAgent-{s.step_order} ({s.tool})" for s in tier]
                 await self.emit_event(
-                    "approval_required",
-                    f"Approval needed: {consequence}",
-                    {
-                        "tool": tool_name,
-                        "risk_level": risk_level,
-                        "consequence": consequence,
-                        "params": tool_params
-                    },
-                    step_id=step.id
-                )
-                
-                # Check takeover mode (e.g. browser payments/logins)
-                is_takeover = "payment" in task.lower() or "login" in task.lower()
-                takeover_url = tool_params.get("url") if is_takeover else None
-
-                approved, user_feedback = await approval_gate_manager.request_approval(
-                    session_id=self.session_id,
-                    action_type=tool_name,
-                    description=step.description,
-                    consequence=consequence,
-                    target=str(tool_params.get("path") or tool_params.get("recipient") or tool_name),
-                    risk_level=risk_level,
-                    step_id=step.id,
-                    takeover_mode=is_takeover,
-                    takeover_url=takeover_url
+                    "narration",
+                    f"Fanning out {len(tier)} parallel sub-agents for concurrent workstreams: {', '.join(sub_agent_names)}...",
+                    {"tier": tier_idx, "parallel_steps": [s.id for s in tier]}
                 )
 
-                if not approved:
-                    step.status = "failed"
-                    step.result_summary = f"Action denied by user. Reason: {user_feedback or 'User declined.'}"
-                    await self._update_step_db(step)
-                    await self.emit_event(
-                        "narration",
-                        f"Action '{tool_name}' was denied by user. Replanning remaining steps...",
-                        {"feedback": user_feedback},
-                        step_id=step.id
-                    )
-                    await planner_engine.revise_plan(self.session_id, plan, "User denied step", step.id)
-                    continue
+                # Fan out concurrent sub-agents
+                tier_tasks = [self._execute_single_step(s, plan, task, prior_observations) for s in tier]
+                results = await asyncio.gather(*tier_tasks, return_exceptions=True)
 
-                await self.emit_event("narration", f"Action approved. Proceeding with {tool_name}...", step_id=step.id)
+                # Merge step (architecture.md §8)
+                await self.emit_event(
+                    "narration",
+                    f"Reconciling and merging {len(tier)} sub-agent outputs into unified session state.",
+                    {"tier": tier_idx, "completed_sub_agents": len(tier)}
+                )
+            else:
+                # Single step execution
+                step = tier[0]
+                await self._execute_single_step(step, plan, task, prior_observations)
 
-            # Tool Execution inside Sandbox
-            tool_instance = tool_registry.get_tool(tool_name)
-            if not tool_instance:
+        await self.emit_event("done", "All plan steps completed successfully.", {"plan_id": plan.id})
+        return True
+
+    async def _execute_single_step(
+        self,
+        step: StepBase,
+        plan: PlanModel,
+        task: str,
+        prior_observations: List[Dict[str, Any]]
+    ) -> bool:
+        await self._pause_event.wait()
+        if self.is_cancelled:
+            return False
+
+        if step.status in ("completed", "skipped"):
+            return True
+
+        step.status = "running"
+        await self._update_step_db(step)
+        await self.emit_event(
+            "narration",
+            f"Starting: {step.description}",
+            {"step_id": step.id, "tool": step.tool},
+            step_id=step.id
+        )
+
+        # ReAct Reason pass
+        reasoning = await self.llm.reason_step(
+            task=task,
+            step=step,
+            prior_observations=prior_observations,
+            tools_available=tool_registry.list_tools()
+        )
+
+        await self.emit_event(
+            "reasoning",
+            reasoning.get("narration", f"Reasoning about step: {step.description}"),
+            {"thought": reasoning.get("thought"), "tool": reasoning.get("tool"), "params": reasoning.get("params")},
+            step_id=step.id
+        )
+
+        tool_name = reasoning.get("tool", step.tool)
+        tool_params = reasoning.get("params", {})
+
+        # Enforce Risk Tier & Approval Gate (rules.md §2)
+        pre_approved = approval_gate_manager.get_pre_approved_classes(self.session_id)
+        risk_level, requires_approval, consequence = safety_engine.classify_tool_risk(
+            tool_name=tool_name,
+            input_params=tool_params,
+            pre_approved_medium_classes=pre_approved
+        )
+
+        if requires_approval:
+            await self.emit_event(
+                "approval_required",
+                f"Approval needed: {consequence}",
+                {
+                    "tool": tool_name,
+                    "risk_level": risk_level,
+                    "consequence": consequence,
+                    "params": tool_params
+                },
+                step_id=step.id
+            )
+            
+            is_takeover = "payment" in task.lower() or "login" in task.lower()
+            takeover_url = tool_params.get("url") if is_takeover else None
+
+            approved, user_feedback = await approval_gate_manager.request_approval(
+                session_id=self.session_id,
+                action_type=tool_name,
+                description=step.description,
+                consequence=consequence,
+                target=str(tool_params.get("path") or tool_params.get("recipient") or tool_name),
+                risk_level=risk_level,
+                step_id=step.id,
+                takeover_mode=is_takeover,
+                takeover_url=takeover_url
+            )
+
+            if not approved:
                 step.status = "failed"
-                step.result_summary = f"Tool '{tool_name}' not found."
+                step.result_summary = f"Action denied by user. Reason: {user_feedback or 'User declined.'}"
                 await self._update_step_db(step)
-                continue
-
-            self.tool_calls_count += 1
-            start_ms = int(time.time() * 1000)
-
-            # Audit log before call (architecture.md §4)
-            audit_logger.log_event(
-                session_id=self.session_id,
-                event_type="tool_call_start",
-                actor="executor",
-                details={"tool": tool_name, "params": tool_params},
-                step_id=step.id
-            )
-
-            try:
-                result = await tool_instance.execute(session_id=self.session_id, **tool_params)
-            except Exception as ex:
-                result = {"success": False, "error": str(ex)}
-
-            exec_time_ms = int(time.time() * 1000) - start_ms
-
-            # Audit log after call
-            audit_logger.log_event(
-                session_id=self.session_id,
-                event_type="tool_call_end",
-                actor="executor",
-                details={"tool": tool_name, "success": result.get("success", False), "time_ms": exec_time_ms},
-                step_id=step.id
-            )
-
-            # Record Tool Call in DB
-            await self._record_tool_call_db(step.id, tool_name, tool_params, result, risk_level, exec_time_ms)
-
-            # Check if an artifact deliverable was produced
-            if tool_name == "create_document" and result.get("success"):
-                await self._record_artifact_db(result)
                 await self.emit_event(
-                    "artifact_created",
-                    f"Created deliverable: {result.get('filename')}",
-                    result,
+                    "narration",
+                    f"Action '{tool_name}' was denied by user. Replanning remaining steps...",
+                    {"feedback": user_feedback},
                     step_id=step.id
                 )
+                await planner_engine.revise_plan(self.session_id, plan, "User denied step", step.id)
+                return False
 
-            # Update working memory & step completion
-            step.status = "completed" if result.get("success") else "failed"
-            step.result_summary = result.get("summary") or result.get("message") or ("Completed." if result.get("success") else result.get("error"))
+            await self.emit_event("narration", f"Action approved. Proceeding with {tool_name}...", step_id=step.id)
+
+        # Tool Execution inside Sandbox
+        tool_instance = tool_registry.get_tool(tool_name)
+        if not tool_instance:
+            step.status = "failed"
+            step.result_summary = f"Tool '{tool_name}' not found."
             await self._update_step_db(step)
+            return False
 
+        async with self._lock:
+            self.tool_calls_count += 1
+            
+        start_ms = int(time.time() * 1000)
+
+        # Audit log before call (architecture.md §4)
+        audit_logger.log_event(
+            session_id=self.session_id,
+            event_type="tool_call_start",
+            actor="executor",
+            details={"tool": tool_name, "params": tool_params},
+            step_id=step.id
+        )
+
+        try:
+            result = await tool_instance.execute(session_id=self.session_id, **tool_params)
+        except Exception as ex:
+            result = {"success": False, "error": str(ex)}
+
+        exec_time_ms = int(time.time() * 1000) - start_ms
+
+        # Audit log after call
+        audit_logger.log_event(
+            session_id=self.session_id,
+            event_type="tool_call_end",
+            actor="executor",
+            details={"tool": tool_name, "success": result.get("success", False), "time_ms": exec_time_ms},
+            step_id=step.id
+        )
+
+        # Record Tool Call in DB
+        await self._record_tool_call_db(step.id, tool_name, tool_params, result, risk_level, exec_time_ms)
+
+        # Check if an artifact deliverable was produced
+        if tool_name == "create_document" and result.get("success"):
+            await self._record_artifact_db(result)
+            await self.emit_event(
+                "artifact_created",
+                f"Created deliverable: {result.get('filename')}",
+                result,
+                step_id=step.id
+            )
+
+        # Update working memory & step completion
+        step.status = "completed" if result.get("success") else "failed"
+        step.result_summary = result.get("summary") or result.get("message") or ("Completed." if result.get("success") else result.get("error"))
+        await self._update_step_db(step)
+
+        async with self._lock:
             self.working_memory.add_turn(
                 role="assistant",
                 content=f"Executed {tool_name}: {step.result_summary}",
@@ -229,15 +270,13 @@ class ExecutorSession:
             )
             prior_observations.append({"step": step.id, "tool": tool_name, "result": result})
 
-            await self.emit_event(
-                "narration",
-                f"Finished: {step.description}. {step.result_summary}",
-                {"output": result},
-                step_id=step.id
-            )
-
-        await self.emit_event("done", "All plan steps completed successfully.", {"plan_id": plan.id})
-        return True
+        await self.emit_event(
+            "narration",
+            f"Finished: {step.description}. {step.result_summary}",
+            {"output": result},
+            step_id=step.id
+        )
+        return result.get("success", False)
 
     async def _update_step_db(self, step: StepBase):
         async with AsyncSessionLocal() as db:
@@ -274,7 +313,6 @@ class ExecutorSession:
             )
             db.add(db_call)
             
-            # Update session tool call count
             session_stmt = update(DBSession).where(DBSession.id == self.session_id).values(
                 tool_calls_count=DBSession.tool_calls_count + 1,
                 updated_at=datetime.utcnow()

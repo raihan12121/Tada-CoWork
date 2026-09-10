@@ -12,6 +12,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import type { Plan, RiskLevel } from '../types';
+import { ParallelSwimlanes } from './ParallelSwimlanes';
 
 interface PlanViewProps {
   plan: Plan;
@@ -120,6 +121,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
         <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
         <span>Coagent will always ask for your explicit approval before performing irreversible or sensitive actions.</span>
       </div>
+
+      {/* Multi-Workstream Parallel Swimlanes (Phase 6) */}
+      <ParallelSwimlanes
+        steps={plan.steps}
+        activeStepIds={plan.steps.filter(s => s.status === 'running').map(s => s.id)}
+      />
 
       {/* Step List */}
       <div className="space-y-2.5">
