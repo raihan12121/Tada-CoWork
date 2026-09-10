@@ -56,3 +56,12 @@ data/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Desktop & Installer Builds
+dist_pc/
+build_pc/
+dist_installer/
+installer/*.wxs
+*.wixobj
+*.wixpdb
+

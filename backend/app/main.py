@@ -48,3 +48,11 @@ async def health_check():
         "version": settings.VERSION,
         "provider": settings.DEFAULT_PROVIDER
     }
+
+# Mount static frontend dist if available
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+
