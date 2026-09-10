@@ -1,0 +1,293 @@
+import asyncio
+import uuid
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+from sqlalchemy import select, update
+from app.db.session import AsyncSessionLocal, DBSession, DBPlan, DBStep, DBArtifact, DBApproval
+from app.models.schemas import (
+    SessionModel, SessionCreate, PlanModel, StepBase, ArtifactModel, ApprovalRequest, ActivityFeedEvent
+)
+from app.engine.planner import planner_engine
+from app.engine.executor import ExecutorSession
+from app.memory.long_term_memory import long_term_memory
+from app.core.audit import audit_logger
+
+class SessionManager:
+    def __init__(self):
+        self._active_executors: Dict[str, ExecutorSession] = {}
+        self._ws_subscribers: Dict[str, List[asyncio.Queue]] = {}
+        self._background_tasks: Dict[str, asyncio.Task] = {}
+
+    def subscribe_events(self, session_id: str) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        if session_id not in self._ws_subscribers:
+            self._ws_subscribers[session_id] = []
+        self._ws_subscribers[session_id].append(q)
+        return q
+
+    def unsubscribe_events(self, session_id: str, q: asyncio.Queue):
+        if session_id in self._ws_subscribers:
+            try:
+                self._ws_subscribers[session_id].remove(q)
+            except ValueError:
+                pass
+
+    async def broadcast_event(self, event: ActivityFeedEvent):
+        queues = self._ws_subscribers.get(event.session_id, [])
+        for q in queues:
+            await q.put(event)
+
+    async def create_session(self, task_data: SessionCreate) -> SessionModel:
+        session_id = str(uuid.uuid4())
+        
+        # Recall relevant long-term memory
+        relevant_memories = await long_term_memory.retrieve_relevant_memory(
+            query=task_data.task,
+            workspace_id=task_data.workspace_id
+        )
+        memory_context = "\n".join(f"- {m.type.upper()}: {m.content}" for m in relevant_memories)
+
+        # Create session in DB
+        async with AsyncSessionLocal() as db:
+            db_sess = DBSession(
+                id=session_id,
+                task=task_data.task,
+                workspace_id=task_data.workspace_id,
+                status="planning",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(db_sess)
+            await db.commit()
+
+        # Audit log creation
+        audit_logger.log_event(
+            session_id=session_id,
+            event_type="session_created",
+            actor="user",
+            details={"task": task_data.task, "workspace": task_data.workspace_id}
+        )
+
+        # Generate structured plan
+        plan = await planner_engine.generate_initial_plan(
+            session_id=session_id,
+            task=task_data.task,
+            memory_context=memory_context
+        )
+
+        # Update status to created
+        async with AsyncSessionLocal() as db:
+            stmt = update(DBSession).where(DBSession.id == session_id).values(status="created")
+            await db.execute(stmt)
+            await db.commit()
+
+        return SessionModel(
+            id=session_id,
+            task=task_data.task,
+            workspace_id=task_data.workspace_id,
+            status="created",
+            plan=plan,
+            artifacts=[],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+
+    async def start_execution(self, session_id: str):
+        session = await self.get_session(session_id)
+        if not session or not session.plan:
+            raise ValueError("Session or plan not found")
+
+        # Create executor instance
+        executor = ExecutorSession(
+            session_id=session_id,
+            event_callback=self.broadcast_event
+        )
+        self._active_executors[session_id] = executor
+
+        # Update status in DB
+        async with AsyncSessionLocal() as db:
+            stmt = update(DBSession).where(DBSession.id == session_id).values(
+                status="running",
+                updated_at=datetime.utcnow()
+            )
+            await db.execute(stmt)
+            await db.commit()
+
+        # Launch runner in background
+        task = asyncio.create_task(self._run_executor_task(executor, session.plan, session.task))
+        self._background_tasks[session_id] = task
+
+    async def _run_executor_task(self, executor: ExecutorSession, plan: PlanModel, task: str):
+        try:
+            success = await executor.run_plan(plan, task)
+            status = "completed" if success else ("cancelled" if executor.is_cancelled else "failed")
+        except Exception as e:
+            await executor.emit_event("error", f"Fatal execution failure: {str(e)}")
+            status = "failed"
+            
+        async with AsyncSessionLocal() as db:
+            stmt = update(DBSession).where(DBSession.id == executor.session_id).values(
+                status=status,
+                updated_at=datetime.utcnow()
+            )
+            await db.execute(stmt)
+            await db.commit()
+
+        # Propose long-term memory candidate extraction at end (Memory.md §4)
+        if status == "completed":
+            candidates = long_term_memory.propose_candidates_from_task(task, [])
+            if candidates:
+                for c in candidates:
+                    await executor.emit_event(
+                        "narration",
+                        f"Memory suggestion: {c.content} (Review in Memory Manager)",
+                        {"candidate": c.model_dump()}
+                    )
+
+        self._active_executors.pop(executor.session_id, None)
+
+    async def pause_session(self, session_id: str):
+        executor = self._active_executors.get(session_id)
+        if executor:
+            executor.pause()
+            async with AsyncSessionLocal() as db:
+                stmt = update(DBSession).where(DBSession.id == session_id).values(status="paused")
+                await db.execute(stmt)
+                await db.commit()
+            await executor.emit_event("narration", "Session paused.")
+
+    async def resume_session(self, session_id: str):
+        executor = self._active_executors.get(session_id)
+        if executor:
+            executor.resume()
+            async with AsyncSessionLocal() as db:
+                stmt = update(DBSession).where(DBSession.id == session_id).values(status="running")
+                await db.execute(stmt)
+                await db.commit()
+            await executor.emit_event("narration", "Session resumed.")
+
+    async def cancel_session(self, session_id: str):
+        executor = self._active_executors.get(session_id)
+        if executor:
+            executor.cancel()
+        async with AsyncSessionLocal() as db:
+            stmt = update(DBSession).where(DBSession.id == session_id).values(status="cancelled")
+            await db.execute(stmt)
+            await db.commit()
+
+    async def get_session(self, session_id: str) -> Optional[SessionModel]:
+        async with AsyncSessionLocal() as db:
+            sess_stmt = select(DBSession).where(DBSession.id == session_id)
+            sess_res = await db.execute(sess_stmt)
+            db_sess = sess_res.scalars().first()
+            if not db_sess:
+                return None
+
+            # Fetch latest plan
+            plan_stmt = select(DBPlan).where(DBPlan.session_id == session_id).order_by(DBPlan.version.desc())
+            plan_res = await db.execute(plan_stmt)
+            db_plan = plan_res.scalars().first()
+
+            plan_model = None
+            if db_plan:
+                steps_stmt = select(DBStep).where(DBStep.plan_id == db_plan.id).order_by(DBStep.step_order.asc())
+                steps_res = await db.execute(steps_stmt)
+                db_steps = steps_res.scalars().all()
+                import json
+                steps = [
+                    StepBase(
+                        id=s.id,
+                        step_order=s.step_order,
+                        description=s.description,
+                        tool=s.tool,
+                        risk_level=s.risk_level, # type: ignore
+                        dependencies=json.loads(s.dependencies_json or "[]"),
+                        status=s.status, # type: ignore
+                        result_summary=s.result_summary
+                    )
+                    for s in db_steps
+                ]
+                plan_model = PlanModel(
+                    id=db_plan.id,
+                    session_id=session_id,
+                    version=db_plan.version,
+                    status=db_plan.status,
+                    explanation=db_plan.explanation,
+                    steps=steps,
+                    created_at=db_plan.created_at
+                )
+
+            # Fetch artifacts
+            art_stmt = select(DBArtifact).where(DBArtifact.session_id == session_id)
+            art_res = await db.execute(art_stmt)
+            db_arts = art_res.scalars().all()
+            artifacts = [
+                ArtifactModel(
+                    id=a.id,
+                    session_id=a.session_id,
+                    name=a.name,
+                    file_type=a.file_type,
+                    relative_path=a.relative_path,
+                    file_size_bytes=a.file_size_bytes,
+                    created_at=a.created_at,
+                    summary=a.summary,
+                    version=a.version
+                )
+                for a in db_arts
+            ]
+
+            # Fetch pending approval
+            appr_stmt = select(DBApproval).where(
+                DBApproval.session_id == session_id,
+                DBApproval.status == "pending"
+            ).order_by(DBApproval.requested_at.desc())
+            appr_res = await db.execute(appr_stmt)
+            db_appr = appr_res.scalars().first()
+            pending_appr = None
+            if db_appr:
+                pending_appr = ApprovalRequest(
+                    id=db_appr.id,
+                    session_id=db_appr.session_id,
+                    step_id=db_appr.step_id,
+                    action_type=db_appr.action_type,
+                    description=db_appr.description,
+                    consequence=db_appr.consequence,
+                    target=db_appr.target,
+                    diff=db_appr.diff,
+                    risk_level=db_appr.risk_level, # type: ignore
+                    status=db_appr.status, # type: ignore
+                    takeover_mode=db_appr.takeover_mode,
+                    takeover_url=db_appr.takeover_url,
+                    requested_at=db_appr.requested_at,
+                    resolved_at=db_appr.resolved_at,
+                    actor=db_appr.actor,
+                    user_feedback=db_appr.user_feedback
+                )
+
+            return SessionModel(
+                id=db_sess.id,
+                task=db_sess.task,
+                workspace_id=db_sess.workspace_id,
+                status=db_sess.status, # type: ignore
+                plan=plan_model,
+                artifacts=artifacts,
+                pending_approval=pending_appr,
+                created_at=db_sess.created_at,
+                updated_at=db_sess.updated_at,
+                tool_calls_count=db_sess.tool_calls_count,
+                total_cost_usd=db_sess.total_cost_usd
+            )
+
+    async def list_sessions(self, limit: int = 20) -> List[SessionModel]:
+        async with AsyncSessionLocal() as db:
+            stmt = select(DBSession).order_by(DBSession.created_at.desc()).limit(limit)
+            res = await db.execute(stmt)
+            items = res.scalars().all()
+            results = []
+            for item in items:
+                sess = await self.get_session(item.id)
+                if sess:
+                    results.append(sess)
+            return results
+
+session_manager = SessionManager()
