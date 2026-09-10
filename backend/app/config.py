@@ -1,9 +1,17 @@
 import os
+import sys
 from pathlib import Path
 
+
+# In packaged mode or when installed in Program Files, write data to user's AppData
+if getattr(sys, "frozen", False) or os.getenv("COAGENT_DATA_DIR") or "Program Files" in str(Path(__file__).resolve()):
+    USER_BASE_DIR = Path(os.getenv("COAGENT_DATA_DIR", Path(os.getenv("APPDATA", Path.home())) / "Coagent"))
+else:
+    USER_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-SANDBOXES_DIR = BASE_DIR / "sandboxes"
-DATA_DIR = BASE_DIR / "data"
+SANDBOXES_DIR = USER_BASE_DIR / "sandboxes"
+DATA_DIR = USER_BASE_DIR / "data"
 
 SANDBOXES_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -17,7 +25,7 @@ class Settings:
     BASE_DIR: Path = BASE_DIR
     SANDBOXES_DIR: Path = SANDBOXES_DIR
     DATA_DIR: Path = DATA_DIR
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/coagent.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR.as_posix()}/coagent.db")
     
     # LLM Settings
     DEFAULT_PROVIDER: str = os.getenv("LLM_PROVIDER", "offline_heuristic")  # "anthropic", "openai", "gemini", "offline_heuristic"

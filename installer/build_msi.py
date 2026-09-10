@@ -109,7 +109,8 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
     # Full XML assembly
     wxs_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
-        '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">',
+        '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"',
+        '     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">',
         '  <Package Name="Coagent"',
         '           Manufacturer="Coagent"',
         '           Version="1.0.0"',
@@ -137,6 +138,16 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
     wxs_lines.append('')
     wxs_lines.extend(shortcut_components)
     wxs_lines.append('')
+    wxs_lines.extend([
+        '    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Coagent" />',
+        '    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />',
+        '    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="[INSTALLFOLDER]Coagent.exe" Return="asyncNoWait" />',
+        '    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />',
+        '    <UI>',
+        '      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />',
+        '    </UI>',
+        ''
+    ])
     wxs_lines.append('    <Feature Id="MainFeature" Title="Coagent Desktop Application" Level="1">')
 
     for cr in comp_refs:
@@ -159,7 +170,7 @@ def build_msi():
     generate_wix_xml(DIST_DIR, wxs_file)
 
     print(f"[MSI Generator] Compiling MSI using WiX toolset...")
-    cmd = ["wix", "build", str(wxs_file), "-arch", "x64", "-out", str(msi_file)]
+    cmd = ["wix", "build", str(wxs_file), "-ext", "WixToolset.UI.wixext", "-arch", "x64", "-out", str(msi_file)]
     res = subprocess.run(cmd, capture_output=True, text=True)
 
     if res.returncode != 0:
@@ -176,3 +187,4 @@ def build_msi():
 
 if __name__ == "__main__":
     build_msi()
+

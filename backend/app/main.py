@@ -51,8 +51,24 @@ async def health_check():
 
 # Mount static frontend dist if available
 from pathlib import Path
+import sys
 from fastapi.staticfiles import StaticFiles
-frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
+
+candidates = [
+    Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+    Path(getattr(sys, "_MEIPASS", "")) / "frontend" / "dist",
+    Path(sys.executable).parent / "_internal" / "frontend" / "dist",
+    Path(sys.executable).parent / "frontend" / "dist",
+    Path.cwd() / "frontend" / "dist"
+]
+
+frontend_dist = None
+for c in candidates:
+    if c and c.exists() and (c / "index.html").exists():
+        frontend_dist = c
+        break
+
+if frontend_dist:
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+
 
