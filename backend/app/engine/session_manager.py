@@ -1,9 +1,10 @@
 import asyncio
 import uuid
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, update
-from app.db.session import AsyncSessionLocal, DBSession, DBPlan, DBStep, DBArtifact, DBApproval
+from app.db.session import AsyncSessionLocal, DBSession, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent
 from app.models.schemas import (
     SessionModel, SessionCreate, PlanModel, StepBase, ArtifactModel, ApprovalRequest, ActivityFeedEvent
 )
@@ -11,12 +12,32 @@ from app.engine.planner import planner_engine
 from app.engine.executor import ExecutorSession
 from app.memory.long_term_memory import long_term_memory
 from app.core.audit import audit_logger
+from app.sandbox.process_sandbox import sandbox_manager
 
 class SessionManager:
     def __init__(self):
         self._active_executors: Dict[str, ExecutorSession] = {}
         self._ws_subscribers: Dict[str, List[asyncio.Queue]] = {}
         self._background_tasks: Dict[str, asyncio.Task] = {}
+
+    async def recover_interrupted_sessions(self) -> int:
+        """Safely mark in-flight work as paused after an orchestrator restart.
+
+        The persisted plan, approvals, activity feed, and artifacts remain
+        available; a user must explicitly resume so a crashed process never
+        silently repeats an external action.
+        """
+        recovered = 0
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DBSession).where(DBSession.status.in_(["running", "waiting_approval"])))
+            sessions = result.scalars().all()
+            for session in sessions:
+                session.status = "paused"
+                session.updated_at = datetime.now(timezone.utc)
+                recovered += 1
+                audit_logger.log_event(session.id, "session_recovered_paused", "system", {"reason": "orchestrator_restart"})
+            await db.commit()
+        return recovered
 
     def subscribe_events(self, session_id: str) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
@@ -54,8 +75,11 @@ class SessionManager:
                 task=task_data.task,
                 workspace_id=task_data.workspace_id,
                 status="planning",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+                ,enabled_tools_json=json.dumps(task_data.enabled_tools)
+                ,granted_folders_json=json.dumps(task_data.granted_folders)
+                ,granted_scopes_json=json.dumps(task_data.granted_scopes)
             )
             db.add(db_sess)
             await db.commit()
@@ -75,6 +99,20 @@ class SessionManager:
             memory_context=memory_context
         )
 
+        # An empty allow-list means "tools required by this plan", never the
+        # entire global registry. This keeps the local demo convenient while
+        # enforcing least privilege at the session boundary.
+        if not task_data.enabled_tools:
+            enabled_tools = sorted({step.tool for step in plan.steps})
+            async with AsyncSessionLocal() as db:
+                stmt = update(DBSession).where(DBSession.id == session_id).values(
+                    enabled_tools_json=json.dumps(enabled_tools)
+                )
+                await db.execute(stmt)
+                await db.commit()
+        else:
+            enabled_tools = task_data.enabled_tools
+
         # Update status to created
         async with AsyncSessionLocal() as db:
             stmt = update(DBSession).where(DBSession.id == session_id).values(status="created")
@@ -88,8 +126,11 @@ class SessionManager:
             status="created",
             plan=plan,
             artifacts=[],
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+            ,enabled_tools=enabled_tools
+            ,granted_folders=task_data.granted_folders
+            ,granted_scopes=task_data.granted_scopes
         )
 
     async def start_execution(self, session_id: str):
@@ -100,7 +141,13 @@ class SessionManager:
         # Create executor instance
         executor = ExecutorSession(
             session_id=session_id,
-            event_callback=self.broadcast_event
+            workspace_id=session.workspace_id,
+            event_callback=self.broadcast_event,
+            enabled_tools=session.enabled_tools,
+            max_steps=session.max_steps,
+            max_tool_calls=session.max_tool_calls,
+            max_runtime_seconds=session.max_runtime_seconds,
+            granted_scopes=session.granted_scopes,
         )
         self._active_executors[session_id] = executor
 
@@ -108,7 +155,7 @@ class SessionManager:
         async with AsyncSessionLocal() as db:
             stmt = update(DBSession).where(DBSession.id == session_id).values(
                 status="running",
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc)
             )
             await db.execute(stmt)
             await db.commit()
@@ -128,10 +175,14 @@ class SessionManager:
         async with AsyncSessionLocal() as db:
             stmt = update(DBSession).where(DBSession.id == executor.session_id).values(
                 status=status,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc)
             )
             await db.execute(stmt)
             await db.commit()
+
+        # Deliverables survive in durable artifact storage; temporary code,
+        # trash, and working files do not survive the session lifecycle.
+        sandbox_manager.finalize(executor.session_id)
 
         # Propose long-term memory candidate extraction at end (Memory.md §4)
         if status == "completed":
@@ -165,6 +216,12 @@ class SessionManager:
                 await db.execute(stmt)
                 await db.commit()
             await executor.emit_event("narration", "Session resumed.")
+        else:
+            # Rehydrate a paused/failed-over session from persisted plan state.
+            session = await self.get_session(session_id)
+            if not session or not session.plan:
+                raise ValueError("Session or plan not found")
+            await self.start_execution(session_id)
 
     async def cancel_session(self, session_id: str):
         executor = self._active_executors.get(session_id)
@@ -174,6 +231,35 @@ class SessionManager:
             stmt = update(DBSession).where(DBSession.id == session_id).values(status="cancelled")
             await db.execute(stmt)
             await db.commit()
+
+    async def update_permission(self, session_id: str, resource_type: str, value: str, granted: bool) -> SessionModel:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ValueError("Session not found")
+        collections = {
+            "tool": session.enabled_tools,
+            "folder": session.granted_folders,
+            "scope": session.granted_scopes,
+        }
+        target = collections[resource_type]
+        if granted and value not in target:
+            target.append(value)
+        if not granted and value in target:
+            target.remove(value)
+        async with AsyncSessionLocal() as db:
+            values = {
+                "enabled_tools_json": json.dumps(session.enabled_tools),
+                "granted_folders_json": json.dumps(session.granted_folders),
+                "granted_scopes_json": json.dumps(session.granted_scopes),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            await db.execute(update(DBSession).where(DBSession.id == session_id).values(**values))
+            await db.commit()
+        executor = self._active_executors.get(session_id)
+        if executor:
+            executor.update_permission(resource_type, value, granted)
+        audit_logger.log_event(session_id, "permission_changed", "user", {"resource_type": resource_type, "value": value, "granted": granted})
+        return await self.get_session(session_id)
 
     async def get_session(self, session_id: str) -> Optional[SessionModel]:
         async with AsyncSessionLocal() as db:
@@ -193,7 +279,6 @@ class SessionManager:
                 steps_stmt = select(DBStep).where(DBStep.plan_id == db_plan.id).order_by(DBStep.step_order.asc())
                 steps_res = await db.execute(steps_stmt)
                 db_steps = steps_res.scalars().all()
-                import json
                 steps = [
                     StepBase(
                         id=s.id,
@@ -276,6 +361,12 @@ class SessionManager:
                 updated_at=db_sess.updated_at,
                 tool_calls_count=db_sess.tool_calls_count,
                 total_cost_usd=db_sess.total_cost_usd
+                ,enabled_tools=json.loads(db_sess.enabled_tools_json or "[]")
+                ,granted_folders=json.loads(db_sess.granted_folders_json or "[]")
+                ,granted_scopes=json.loads(db_sess.granted_scopes_json or "[]")
+                ,max_steps=db_sess.max_steps or 30
+                ,max_tool_calls=db_sess.max_tool_calls or 50
+                ,max_runtime_seconds=db_sess.max_runtime_seconds or 300
             )
 
     async def list_sessions(self, limit: int = 20) -> List[SessionModel]:
@@ -289,5 +380,25 @@ class SessionManager:
                 if sess:
                     results.append(sess)
             return results
+
+    async def get_activity_events(self, session_id: str, limit: int = 200) -> List[ActivityFeedEvent]:
+        async with AsyncSessionLocal() as db:
+            stmt = select(DBActivityEvent).where(
+                DBActivityEvent.session_id == session_id
+            ).order_by(DBActivityEvent.timestamp.asc()).limit(limit)
+            result = await db.execute(stmt)
+            rows = result.scalars().all()
+            return [
+                ActivityFeedEvent(
+                    id=row.id,
+                    session_id=row.session_id,
+                    timestamp=row.timestamp,
+                    event_type=row.event_type,
+                    message=row.message,
+                    technical_details=json.loads(row.technical_details_json) if row.technical_details_json else None,
+                    step_id=row.step_id,
+                )
+                for row in rows
+            ]
 
 session_manager = SessionManager()

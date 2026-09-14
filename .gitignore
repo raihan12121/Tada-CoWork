@@ -65,3 +65,6 @@ installer/*.wxs
 *.wixobj
 *.wixpdb
 
+# Graphify Output
+graphify-out/
+

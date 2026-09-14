@@ -1,8 +1,9 @@
 import hashlib
 import json
 import os
-from datetime import datetime
-from typing import Dict, Any, List, Optional
+import threading
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional, Tuple
 from app.config import settings
 
 class AuditLogger:
@@ -11,6 +12,7 @@ class AuditLogger:
         os.makedirs(self.log_dir, exist_ok=True)
         self.log_file = os.path.join(self.log_dir, "audit_chain.jsonl")
         self._last_hash = self._get_latest_hash()
+        self._lock = threading.Lock()
 
     def _get_latest_hash(self) -> str:
         if not os.path.exists(self.log_file):
@@ -37,7 +39,19 @@ class AuditLogger:
         details: Dict[str, Any],
         step_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        def redact(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    key: ("[REDACTED]" if any(marker in key.lower() for marker in ("token", "secret", "password", "api_key", "authorization")) else redact(item))
+                    for key, item in value.items()
+                }
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            return value
+
+        details = redact(details)
         
         payload_to_hash = {
             "session_id": session_id,
@@ -58,11 +72,17 @@ class AuditLogger:
             "hash": entry_hash
         }
         
-        # Append only
-        with open(self.log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
-            
-        self._last_hash = entry_hash
+        # Parallel executor branches share this logger, so the hash-chain
+        # update and append must be atomic as one critical section.
+        with self._lock:
+            payload_to_hash["prev_hash"] = self._last_hash
+            entry_hash = hashlib.sha256(
+                json.dumps(payload_to_hash, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            record = {**payload_to_hash, "hash": entry_hash}
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+            self._last_hash = entry_hash
         return record
 
     def verify_integrity(self) -> Tuple[bool, Optional[str]]:

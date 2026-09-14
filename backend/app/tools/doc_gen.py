@@ -1,6 +1,8 @@
 import os
 import csv
 import json
+import shutil
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from app.tools.base import BaseTool
@@ -41,6 +43,12 @@ class CreateDocumentTool(BaseTool):
         safe_title = "".join(c for c in title if c.isalnum() or c in ("-", "_", " ")).strip().replace(" ", "_")
         filename = f"{safe_title}.{doc_type}"
         file_path = sandbox.artifacts_dir / filename
+        previous_snapshot = None
+        version = 1
+        if file_path.exists():
+            version = len(list(sandbox.versions_dir.glob(f"artifact_{filename}.*.bak"))) + 2
+            previous_snapshot = sandbox.versions_dir / f"artifact_{filename}.{int(time.time() * 1000)}.bak"
+            shutil.copy2(file_path, previous_snapshot)
         
         try:
             if doc_type == "md":
@@ -175,6 +183,8 @@ class CreateDocumentTool(BaseTool):
                 "file_type": doc_type,
                 "relative_path": rel_artifact_path,
                 "file_size_bytes": file_size,
+                "version": version,
+                "previous_snapshot": previous_snapshot.name if previous_snapshot else None,
                 "summary": f"Polished {doc_type.upper()} deliverable: '{filename}' ({file_size} bytes)."
             }
 

@@ -1,7 +1,7 @@
 import asyncio
 import uuid
-from datetime import datetime
-from typing import Dict, Any, Optional, Set
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, Set, Tuple
 from sqlalchemy import select, update
 from app.db.session import AsyncSessionLocal, DBApproval
 from app.models.schemas import ApprovalRequest, ApprovalResponse, RiskLevel
@@ -39,6 +39,17 @@ class ApprovalGateManager:
         Returns (approved: bool, feedback: Optional[str]).
         """
         approval_id = str(uuid.uuid4())
+        # Reuse a durable pending approval after an orchestrator restart so
+        # resume does not create duplicate prompts for the same step.
+        async with AsyncSessionLocal() as db:
+            existing = await db.execute(select(DBApproval).where(
+                DBApproval.session_id == session_id,
+                DBApproval.step_id == step_id,
+                DBApproval.status == "pending",
+            ).order_by(DBApproval.requested_at.desc()))
+            prior = existing.scalars().first()
+            if prior:
+                approval_id = prior.id
         approval_req = ApprovalRequest(
             id=approval_id,
             session_id=session_id,
@@ -52,28 +63,29 @@ class ApprovalGateManager:
             status="pending",
             takeover_mode=takeover_mode,
             takeover_url=takeover_url,
-            requested_at=datetime.utcnow()
+            requested_at=datetime.now(timezone.utc)
         )
 
         # Save to DB
         async with AsyncSessionLocal() as db:
-            db_approval = DBApproval(
-                id=approval_id,
-                session_id=session_id,
-                step_id=step_id,
-                action_type=action_type,
-                description=description,
-                consequence=consequence,
-                target=target,
-                diff=diff,
-                risk_level=risk_level,
-                status="pending",
-                takeover_mode=takeover_mode,
-                takeover_url=takeover_url,
-                requested_at=datetime.utcnow()
-            )
-            db.add(db_approval)
-            await db.commit()
+            if not prior:
+                db_approval = DBApproval(
+                    id=approval_id,
+                    session_id=session_id,
+                    step_id=step_id,
+                    action_type=action_type,
+                    description=description,
+                    consequence=consequence,
+                    target=target,
+                    diff=diff,
+                    risk_level=risk_level,
+                    status="pending",
+                    takeover_mode=takeover_mode,
+                    takeover_url=takeover_url,
+                    requested_at=datetime.now(timezone.utc)
+                )
+                db.add(db_approval)
+                await db.commit()
 
         # Audit log entry
         audit_logger.log_event(
@@ -92,6 +104,17 @@ class ApprovalGateManager:
 
         event = asyncio.Event()
         self._pending_events[approval_id] = event
+
+        # A resolution may arrive between the durable lookup and event
+        # registration; honor that persisted decision instead of blocking.
+        async with AsyncSessionLocal() as db:
+            current = await db.get(DBApproval, approval_id)
+            if current and current.status != "pending":
+                self._pending_responses[approval_id] = ApprovalResponse(
+                    decision=current.status,
+                    user_feedback=current.user_feedback,
+                )
+                event.set()
 
         try:
             # Wait for human resolution (indefinitely as per design.md §6 - no auto-approve on timeout)
@@ -122,21 +145,24 @@ class ApprovalGateManager:
         """
         Called via REST API when user clicks Approve or Deny in UI.
         """
-        if approval_id not in self._pending_events:
-            return False
-
         resp = ApprovalResponse(
             decision="approved" if decision == "approved" else "denied",
             user_feedback=user_feedback,
             always_allow_category=always_allow_category
         )
-        self._pending_responses[approval_id] = resp
-
-        # Update DB
+        approval_session_id = "unknown"
+        # Update DB and recover the owning session for a complete audit record.
         async with AsyncSessionLocal() as db:
+            lookup = await db.execute(select(DBApproval).where(DBApproval.id == approval_id))
+            approval_row = lookup.scalar_one_or_none()
+            if approval_row:
+                approval_session_id = approval_row.session_id
+            else:
+                return False
+            self._pending_responses[approval_id] = resp
             stmt = update(DBApproval).where(DBApproval.id == approval_id).values(
                 status=resp.decision,
-                resolved_at=datetime.utcnow(),
+                resolved_at=datetime.now(timezone.utc),
                 actor=actor,
                 user_feedback=user_feedback
             )
@@ -145,7 +171,7 @@ class ApprovalGateManager:
 
         # Audit log resolution
         audit_logger.log_event(
-            session_id="unknown",
+            session_id=approval_session_id,
             event_type="approval_resolved",
             actor=actor,
             details={
@@ -157,7 +183,9 @@ class ApprovalGateManager:
         )
 
         # Wake up waiting executor coroutine
-        self._pending_events[approval_id].set()
+        event = self._pending_events.get(approval_id)
+        if event:
+            event.set()
         return True
 
     async def get_pending_approval(self, session_id: str) -> Optional[ApprovalRequest]:

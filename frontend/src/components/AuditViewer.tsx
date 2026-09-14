@@ -13,20 +13,27 @@ export const AuditViewer: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [integrityStatus, setIntegrityStatus] = useState<{ integrity_verified: boolean; error?: string } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [policy, setPolicy] = useState<any>(null);
+  const [usage, setUsage] = useState<any>(null);
+  const [connectorBlocklist, setConnectorBlocklist] = useState('');
 
-  const loadAuditData = async () => {
-    try {
-      const entries = await api.exportAuditLog();
-      setLogs(entries.reverse()); // latest first
-      const status = await api.verifyAuditIntegrity();
-      setIntegrityStatus(status);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
   useEffect(() => {
-    loadAuditData();
+    let ignore = false;
+    Promise.all([api.exportAuditLog(), api.verifyAuditIntegrity(), api.getOrganizationPolicy(), api.getAdminUsage()])
+      .then(([entries, status, orgPolicy, orgUsage]) => {
+        if (!ignore) {
+          setLogs([...entries].reverse());
+          setIntegrityStatus(status);
+          setPolicy(orgPolicy);
+          setUsage(orgUsage);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleVerify = async () => {
@@ -53,6 +60,15 @@ export const AuditViewer: React.FC = () => {
     a.href = url;
     a.download = `coagent_audit_trail_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
+  };
+
+  const savePolicy = async () => {
+    if (!policy) return;
+    const updated = await api.updateOrganizationPolicy({
+      ...policy,
+      connector_blocklist: connectorBlocklist.split(',').map((item) => item.trim()).filter(Boolean),
+    });
+    setPolicy(updated);
   };
 
   return (
@@ -127,6 +143,31 @@ export const AuditViewer: React.FC = () => {
       </div>
 
       {/* Audit Trail List */}
+      {policy && (
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Organization Policy</h4>
+              <p className="text-[11px] text-gray-400 mt-1">Connector blocklist and global execution controls.</p>
+            </div>
+            {usage && <div className="text-right text-[11px] text-gray-400">{usage.active_sessions} active · {usage.tool_calls} tool calls · ${Number(usage.estimated_cost_usd).toFixed(4)}</div>}
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              value={connectorBlocklist || (policy.connector_blocklist || []).join(', ')}
+              onChange={(event) => setConnectorBlocklist(event.target.value)}
+              placeholder="Blocked connectors, comma separated"
+              className="flex-1 bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+            />
+            <button onClick={savePolicy} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded">Save policy</button>
+          </div>
+          <label className="flex items-center space-x-2 mt-3 text-xs text-gray-300">
+            <input type="checkbox" checked={Boolean(policy.kill_switch)} onChange={(event) => setPolicy({ ...policy, kill_switch: event.target.checked })} />
+            <span>Organization kill switch</span>
+          </label>
+        </div>
+      )}
+
       <div className="space-y-2">
         <div className="text-xs font-semibold uppercase text-gray-500 tracking-wider mb-2">
           Immutable Action Ledger ({logs.length} events)

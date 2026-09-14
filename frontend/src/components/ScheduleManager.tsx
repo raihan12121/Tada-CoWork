@@ -21,17 +21,14 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
   const [taskTemplate, setTaskTemplate] = useState('');
   const [cron, setCron] = useState('0 9 * * 1'); // Every Monday at 9am
 
-  const loadSchedules = async () => {
-    try {
-      const items = await api.listSchedules();
-      setSchedules(items);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSchedules();
+    let ignore = false;
+    api.listSchedules().then((items) => {
+      if (!ignore) setSchedules(items);
+    }).catch(console.error);
+    return () => { ignore = true; };
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -46,10 +43,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
 
   const handleTrigger = async (id: string) => {
     try {
+      setErrorMessage(null);
       const session = await api.triggerSchedule(id);
       onSessionCreated(session.id);
     } catch (err) {
-      alert('Failed to trigger schedule.');
+      console.error('Failed to trigger schedule:', err);
+      setErrorMessage('Failed to trigger schedule. Please check backend service status.');
+      setTimeout(() => setErrorMessage(null), 4000);
     }
   };
 
@@ -80,6 +80,12 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
           <span>New Schedule</span>
         </button>
       </div>
+
+      {errorMessage && (
+        <div className="mb-4 p-3 bg-red-900/30 border border-red-500/40 rounded-xl text-xs text-red-300">
+          {errorMessage}
+        </div>
+      )}
 
       <div className="space-y-3">
         {schedules.length === 0 ? (

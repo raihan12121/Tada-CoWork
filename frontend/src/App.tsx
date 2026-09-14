@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { AlertCircle, X } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TaskIntake } from './components/TaskIntake';
 import { PlanView } from './components/PlanView';
@@ -16,35 +17,46 @@ export const App: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [usage, setUsage] = useState<{ tool_calls: number; tool_call_limit: number; steps_completed: number; step_limit: number; estimated_cost_usd: number; runtime_limit_seconds: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const loadSessions = async () => {
-    try {
-      const data = await api.listSessions();
-      setSessions(data);
-      if (data.length > 0 && !activeSession) {
-        setActiveSession(data[0]);
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
+  const activeSessionId = activeSession?.id;
+
   useEffect(() => {
-    loadSessions();
-  }, []);
+    let ignore = false;
+    api.listSessions().then((data) => {
+      if (!ignore) {
+        setSessions(data);
+        if (data.length > 0 && !activeSessionId) {
+          setActiveSession(data[0]);
+        }
+      }
+    }).catch(console.error);
+    return () => {
+      ignore = true;
+    };
+  }, [activeSessionId]);
 
   // WebSocket Live Streaming for Active Session
   useEffect(() => {
-    if (!activeSession) return;
+    if (!activeSessionId) return;
+
+    api.getSessionEvents(activeSessionId).then(setEvents).catch(console.error);
+    api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
 
     if (wsRef.current) {
       wsRef.current.close();
     }
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/v1/sessions/${activeSession.id}/stream`;
+    const wsUrl = `${proto}//${window.location.host}/v1/sessions/${activeSessionId}/stream`;
     
     try {
       const ws = new WebSocket(wsUrl);
@@ -57,8 +69,9 @@ export const App: React.FC = () => {
 
           // Refresh session on key milestones
           if (['artifact_created', 'approval_required', 'plan_revised', 'done', 'error'].includes(event.event_type)) {
-            api.getSession(activeSession.id).then(setActiveSession);
-            api.listSessions().then(setSessions);
+            api.getSession(activeSessionId).then(setActiveSession).catch(console.error);
+            api.listSessions().then(setSessions).catch(console.error);
+            api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
           }
         } catch (e) {
           console.error(e);
@@ -77,18 +90,19 @@ export const App: React.FC = () => {
         wsRef.current.close();
       }
     };
-  }, [activeSession?.id]);
+  }, [activeSessionId]);
 
   const handleCreateSession = async (task: string) => {
     setIsLoading(true);
     try {
       const newSession = await api.createSession(task);
-      setSessions([newSession, ...sessions]);
+      setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setEvents([]);
       setCurrentTab('workspace');
     } catch (err) {
-      alert('Failed to generate execution plan.');
+      console.error('Failed to generate plan:', err);
+      showToast('Failed to generate execution plan. Please check backend connection.');
     } finally {
       setIsLoading(false);
     }
@@ -144,7 +158,20 @@ export const App: React.FC = () => {
   const handleSelectSession = async (id: string) => {
     const s = await api.getSession(id);
     setActiveSession(s);
-    setEvents([]);
+    setEvents(await api.getSessionEvents(id));
+    setUsage(await api.getSessionUsage(id));
+  };
+
+  const handleDeleteStep = async (stepId: string) => {
+    if (!activeSession) return;
+    const plan = await api.editPlan(activeSession.id, { action: 'remove', step_id: stepId });
+    setActiveSession({ ...activeSession, plan });
+  };
+
+  const handleAddStep = async (description: string, tool: string, risk_level: 'low' | 'medium' | 'high') => {
+    if (!activeSession) return;
+    const plan = await api.editPlan(activeSession.id, { action: 'add', description, tool, risk_level });
+    setActiveSession({ ...activeSession, plan });
   };
 
   return (
@@ -168,7 +195,7 @@ export const App: React.FC = () => {
         {currentTab === 'schedules' && (
           <ScheduleManager onSessionCreated={handleSelectSession} />
         )}
-        {currentTab === 'bridge' && <BridgeManager />}
+        {currentTab === 'bridge' && <BridgeManager activeSessionId={activeSession?.id} />}
         {currentTab === 'audit' && <AuditViewer />}
 
         {currentTab === 'workspace' && (
@@ -205,6 +232,8 @@ export const App: React.FC = () => {
                       plan={activeSession.plan}
                       sessionStatus={activeSession.status}
                       onStartExecution={handleStartExecution}
+                      onDeleteStep={handleDeleteStep}
+                      onAddStep={handleAddStep}
                     />
                   )}
 
@@ -219,6 +248,15 @@ export const App: React.FC = () => {
                   />
                 </div>
 
+                {usage && (
+                  <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                    <div><div className="text-gray-500 uppercase text-[10px]">Tool calls</div><div className="text-white font-semibold">{usage.tool_calls} / {usage.tool_call_limit}</div></div>
+                    <div><div className="text-gray-500 uppercase text-[10px]">Steps</div><div className="text-white font-semibold">{usage.steps_completed} / {usage.step_limit}</div></div>
+                    <div><div className="text-gray-500 uppercase text-[10px]">Estimated cost</div><div className="text-white font-semibold">${usage.estimated_cost_usd.toFixed(4)}</div></div>
+                    <div><div className="text-gray-500 uppercase text-[10px]">Runtime cap</div><div className="text-white font-semibold">{usage.runtime_limit_seconds}s</div></div>
+                  </div>
+                )}
+
                 {/* Delivered Artifacts */}
                 <ArtifactPanel
                   artifacts={activeSession.artifacts}
@@ -229,6 +267,20 @@ export const App: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Non-blocking Floating Notification Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-3 bg-red-950/95 border border-red-500/50 text-red-200 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          <span className="text-xs font-medium">{toastMessage}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-red-400 hover:text-white ml-2 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

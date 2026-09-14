@@ -29,7 +29,7 @@ class AnthropicLLMProvider(BaseLLMProvider):
             "You are the Coagent Planner. Deconstruct the user task into a structured plan graph. "
             "Return JSON with keys: explanation, steps: [{description, tool, risk_level, dependencies}]. "
             "Tools available: execute_code, create_file, write_file, edit_file, delete_file, read_file, "
-            "list_files, create_document, web_search, web_fetch. "
+            "list_files, create_document, web_search, web_fetch, browser_automation, google_drive, gmail, outlook, github, slack, webhook. "
             "Risk levels: low (read-only/search), medium (file create/write/code exec), high (delete/external send)."
         )
         prompt = f"Task: {task}\nMemory Context:\n{memory_context}"
@@ -69,6 +69,62 @@ class AnthropicLLMProvider(BaseLLMProvider):
     ) -> Dict[str, Any]:
         return OfflineHeuristicProvider().reason_step_sync(task, step, prior_observations, tools_available)
 
+
+class OpenAILLMProvider(BaseLLMProvider):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.endpoint = "https://api.openai.com/v1/chat/completions"
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    async def _json_call(self, system: str, prompt: str) -> Dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                response = await client.post(
+                    self.endpoint,
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "temperature": 0,
+                        "response_format": {"type": "json_object"},
+                        "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+                    },
+                )
+                response.raise_for_status()
+                return json.loads(response.json()["choices"][0]["message"]["content"])
+        except Exception:
+            return {}
+
+    async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
+        data = await self._json_call(
+            "Return only JSON with explanation and steps. Each step has description, tool, risk_level, dependencies.",
+            f"Task: {task}\nMemory context: {memory_context}",
+        )
+        return data or OfflineHeuristicProvider().generate_plan_sync(task, memory_context)
+
+    async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
+        data = await self._json_call(
+            "Return only JSON with thought, narration, tool, and params. Choose only from the available tools.",
+            json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available}),
+        )
+        return data or OfflineHeuristicProvider().reason_step_sync(task, step, prior_observations, tools_available)
+
+
+class GeminiLLMProvider(OpenAILLMProvider):
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}:generateContent?key={api_key}"
+
+    async def _json_call(self, system: str, prompt: str) -> Dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                response = await client.post(self.endpoint, json={"contents": [{"parts": [{"text": f"{system}\n{prompt}"}]}]})
+                response.raise_for_status()
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                start, end = text.find("{"), text.rfind("}") + 1
+                return json.loads(text[start:end]) if start >= 0 and end > start else {}
+        except Exception:
+            return {}
+
 class OfflineHeuristicProvider(BaseLLMProvider):
     """
     Deterministic knowledge-work engine tailored to PRD & usecases.md personas.
@@ -84,7 +140,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
                 "steps": [
                     {"description": "Scan and inventory target folder contents", "tool": "list_files", "risk_level": "low", "dependencies": []},
                     {"description": "Analyze file metadata and determine organization schema", "tool": "execute_code", "risk_level": "low", "dependencies": ["step-1"]},
-                    {"description": "Move files into categorized subfolders", "tool": "write_file", "risk_level": "medium", "dependencies": ["step-2"]},
+                    {"description": "Move files into categorized subfolders", "tool": "move_file", "risk_level": "medium", "dependencies": ["step-2"]},
                     {"description": "Generate folder organization summary report", "tool": "create_document", "risk_level": "low", "dependencies": ["step-3"]}
                 ]
             }
@@ -98,6 +154,27 @@ class OfflineHeuristicProvider(BaseLLMProvider):
                     {"description": "Process and categorize line items, dates, and amounts", "tool": "execute_code", "risk_level": "low", "dependencies": ["step-1"]},
                     {"description": "Build formatted spreadsheet with summary totals", "tool": "create_document", "risk_level": "medium", "dependencies": ["step-2"]},
                     {"description": "Generate expense verification breakdown report", "tool": "create_document", "risk_level": "low", "dependencies": ["step-3"]}
+                ]
+            }
+
+        # UC-3: Draft report from notes and data
+        if "meeting notes" in task_lower or "quarterly report" in task_lower or "first-draft" in task_lower:
+            return {
+                "explanation": "I will read the supplied notes and data, structure the findings, and generate a clearly marked first-draft report.",
+                "steps": [
+                    {"description": "Read meeting notes and supporting data files", "tool": "read_file", "risk_level": "low", "dependencies": []},
+                    {"description": "Outline findings and draft report sections", "tool": "execute_code", "risk_level": "low", "dependencies": ["step-1"]},
+                    {"description": "Generate formatted first-draft report", "tool": "create_document", "risk_level": "medium", "dependencies": ["step-2"]}
+                ]
+            }
+
+        # UC-7: Browser research with user takeover at checkout/login
+        if "flight" in task_lower or "booking" in task_lower or "browser" in task_lower or "captcha" in task_lower:
+            return {
+                "explanation": "I will research options in the granted browser session, then hand control back to you before login, payment, or submission.",
+                "steps": [
+                    {"description": "Search live sites for matching travel options", "tool": "browser_automation", "risk_level": "low", "dependencies": []},
+                    {"description": "Hand browser control to the user at the checkout or login step", "tool": "browser_automation", "risk_level": "high", "dependencies": ["step-1"]}
                 ]
             }
 
@@ -168,12 +245,12 @@ class OfflineHeuristicProvider(BaseLLMProvider):
             params = {
                 "language": "python",
                 "code": (
-                    "# Coagent autonomous computation\n"
-                    "results = {'status': 'processed', 'records': 24, 'summary': 'Data normalized successfully'}\n"
-                    "print(f'Execution output: {results}')"
+                    "# Development preview: no user source data was provided to this offline planner.\n"
+                    "result = {'status': 'preview_only', 'message': 'No source data was available; no factual transformation was performed.'}\n"
+                    "print(result)"
                 )
             }
-            narration = "Analyzing and processing data with sandboxed Python..."
+            narration = "Running a sandbox preview; source data is required for factual processing..."
         elif tool == "create_document":
             doc_type = "md"
             if "spreadsheet" in task.lower() or "expense" in task.lower() or "xlsx" in task.lower():
@@ -186,7 +263,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
             params = {
                 "title": f"{task[:40]} Deliverable",
                 "document_type": doc_type,
-                "content": f"# Summary Deliverable\n\nGenerated for task: {task}\n\n## Key Findings\n- Analysis completed successfully.\n- Clean outputs generated.\n"
+                "content": f"# Preview Deliverable\n\nTask: {task}\n\n## Status\nThis offline planning preview did not receive source data or a live model result. No factual findings are asserted. Supply the requested inputs and configure a live provider before treating this as a completed deliverable.\n"
             }
             narration = f"Generating deliverable {doc_type.upper()} document..."
         elif tool == "read_file":
@@ -198,6 +275,9 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         elif tool == "write_file":
             params = {"path": "output.txt", "content": f"Coagent Output for: {task}"}
             narration = "Writing output files..."
+        elif tool == "move_file":
+            params = {"source": "input.txt", "destination": "organized/input.txt"}
+            narration = "Moving files into the approved organization..."
         elif tool == "delete_file":
             params = {"path": "duplicate_sample.tmp"}
             narration = "Requesting approval to purge file..."
@@ -214,6 +294,13 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         elif tool == "web_fetch":
             params = {"url": "https://example.com/industry-data"}
             narration = "Fetching research source data..."
+        elif tool == "browser_automation":
+            if "takeover" in desc or "login" in desc or "payment" in desc or "checkout" in desc:
+                params = {"action": "takeover", "url": "https://example.com/checkout"}
+                narration = "Handing the browser back to you for a sensitive step..."
+            else:
+                params = {"action": "navigate", "url": "https://www.google.com/travel"}
+                narration = "Researching options in the granted browser session..."
         else:
             params = {"task": task}
 
@@ -234,6 +321,10 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         return self.reason_step_sync(task, step, prior_observations, tools_available)
 
 def get_llm_client() -> BaseLLMProvider:
+    if settings.DEFAULT_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        return OpenAILLMProvider(settings.OPENAI_API_KEY)
+    if settings.DEFAULT_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
+        return GeminiLLMProvider(settings.GEMINI_API_KEY)
     if settings.ANTHROPIC_API_KEY:
         return AnthropicLLMProvider(settings.ANTHROPIC_API_KEY)
     return OfflineHeuristicProvider()

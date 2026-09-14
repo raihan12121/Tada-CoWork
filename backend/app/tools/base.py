@@ -31,5 +31,13 @@ class BaseTool:
             "required": []
         }
 
+    def get_required_scopes(self, input_params: Optional[Dict[str, Any]] = None) -> List[str]:
+        """Return the least-privilege scopes needed for this invocation.
+
+        Connectors may override this based on a read versus write action;
+        ``required_scopes`` remains the union advertised in discovery schema.
+        """
+        return list(self.required_scopes)
+
     async def execute(self, session_id: str, **kwargs) -> Dict[str, Any]:
         raise NotImplementedError

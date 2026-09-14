@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 class WorkingMemory:
     """
@@ -11,14 +11,14 @@ class WorkingMemory:
         self.session_id = session_id
         self.max_active_turns = max_active_turns
         self.history: List[Dict[str, Any]] = []
-        self.compacted_summary: str = ""
+        self.compacted_summary: Optional[str] = None
 
     def add_turn(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None):
         self.history.append({
             "role": role,
             "content": content,
             "metadata": metadata or {},
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         self._check_and_compact()
 

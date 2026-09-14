@@ -1,11 +1,12 @@
 import re
 import math
 import uuid
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, update, delete
-from app.db.session import AsyncSessionLocal, DBMemoryItem
-from app.models.schemas import MemoryItemModel, MemoryCandidate, MemoryType
+from app.db.session import AsyncSessionLocal, DBMemoryItem, DBWorkspace
+from app.models.schemas import MemoryItemModel, MemoryCandidate, MemoryType, MemoryUpdate
 
 def compute_simple_embedding(text: str) -> List[float]:
     """
@@ -22,7 +23,10 @@ def compute_simple_embedding(text: str) -> List[float]:
     vec_len = 64
     vec = [0.0] * vec_len
     for w, count in freq.items():
-        idx = hash(w) % vec_len
+        # Python's built-in hash is intentionally randomized per process;
+        # stable hashing keeps retrieval consistent after restarts.
+        digest = hashlib.sha256(w.encode("utf-8")).digest()
+        idx = int.from_bytes(digest[:4], "big") % vec_len
         vec[idx] += (count / norm)
     return vec
 
@@ -34,13 +38,31 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 class LongTermMemoryManager:
     def __init__(self):
-        self.enabled_workspaces: Dict[str, bool] = {"default": True}
+        # Long-term memory is explicitly opt-in per Memory.md.
+        self.enabled_workspaces: Dict[str, bool] = {"default": False}
 
     def set_memory_enabled(self, workspace_id: str, enabled: bool):
         self.enabled_workspaces[workspace_id] = enabled
 
     def is_memory_enabled(self, workspace_id: str) -> bool:
         return self.enabled_workspaces.get(workspace_id, False)
+
+    async def load_workspace_settings(self) -> None:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DBWorkspace))
+            for workspace in result.scalars().all():
+                self.enabled_workspaces[workspace.id] = bool(workspace.memory_enabled)
+
+    async def persist_memory_enabled(self, workspace_id: str, enabled: bool) -> None:
+        self.set_memory_enabled(workspace_id, enabled)
+        async with AsyncSessionLocal() as db:
+            workspace = await db.get(DBWorkspace, workspace_id)
+            if not workspace:
+                workspace = DBWorkspace(id=workspace_id, organization_id="default", name=workspace_id, memory_enabled=enabled)
+                db.add(workspace)
+            else:
+                workspace.memory_enabled = enabled
+            await db.commit()
 
     async def add_memory_item(
         self,
@@ -60,7 +82,7 @@ class LongTermMemoryManager:
                 source_session_id=source_session_id,
                 workspace_id=workspace_id,
                 is_active=True,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             db.add(db_item)
             await db.commit()
@@ -121,6 +143,10 @@ class LongTermMemoryManager:
                 )
                 for score, item in scored[:limit]
             ]
+            now = datetime.now(timezone.utc)
+            for _, item in scored[:limit]:
+                item.last_used_at = now
+            await db.commit()
             return top_items
 
     async def list_all_memory(self, workspace_id: str = "default") -> List[MemoryItemModel]:
@@ -143,11 +169,37 @@ class LongTermMemoryManager:
                 for i in items
             ]
 
-    async def delete_memory_item(self, item_id: str):
+    async def delete_memory_item(self, item_id: str) -> bool:
         async with AsyncSessionLocal() as db:
-            stmt = delete(DBMemoryItem).where(DBMemoryItem.id == item_id)
-            await db.execute(stmt)
+            stmt = select(DBMemoryItem).where(DBMemoryItem.id == item_id)
+            result = await db.execute(stmt)
+            item = result.scalar_one_or_none()
+            if not item:
+                return False
+            del_stmt = delete(DBMemoryItem).where(DBMemoryItem.id == item_id)
+            await db.execute(del_stmt)
             await db.commit()
+            return True
+
+    async def update_memory_item(self, item_id: str, changes: MemoryUpdate) -> Optional[MemoryItemModel]:
+        async with AsyncSessionLocal() as db:
+            stmt = select(DBMemoryItem).where(DBMemoryItem.id == item_id)
+            result = await db.execute(stmt)
+            item = result.scalar_one_or_none()
+            if not item:
+                return None
+            if changes.content is not None:
+                item.content = changes.content.strip()
+            if changes.key is not None:
+                item.key = changes.key
+            if changes.is_active is not None:
+                item.is_active = changes.is_active
+            await db.commit()
+            return MemoryItemModel(
+                id=item.id, type=item.type, key=item.key, content=item.content,
+                source_session_id=item.source_session_id, workspace_id=item.workspace_id,
+                is_active=item.is_active, created_at=item.created_at, last_used_at=item.last_used_at,
+            )
 
     def propose_candidates_from_task(self, task: str, deliverables: List[str]) -> List[MemoryCandidate]:
         """

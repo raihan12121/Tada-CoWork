@@ -1,12 +1,13 @@
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from app.db.session import AsyncSessionLocal, DBPlan, DBStep
-from app.models.schemas import PlanModel, StepBase, RiskLevel
+from app.models.schemas import PlanModel, StepBase, RiskLevel, PlanEditRequest
 from app.core.llm import get_llm_client
 from app.core.audit import audit_logger
+from app.tools.registry import tool_registry
 
 class PlannerEngine:
     def __init__(self):
@@ -24,15 +25,20 @@ class PlannerEngine:
         raw_steps = plan_data.get("steps", [])
 
         steps: List[StepBase] = []
+        step_ids = {f"step-{i}": f"{session_id[:8]}-step-{i}" for i in range(1, len(raw_steps) + 1)}
         for i, s in enumerate(raw_steps, 1):
             step_id = f"{session_id[:8]}-step-{i}"
+            tool_name = s.get("tool", "execute_code")
+            if not tool_registry.get_tool(tool_name):
+                raise ValueError(f"Planner selected unknown tool: {tool_name}")
+            dependencies = [step_ids.get(dep, dep) for dep in s.get("dependencies", [])]
             steps.append(StepBase(
                 id=step_id,
                 step_order=i,
                 description=s.get("description", f"Step {i}"),
-                tool=s.get("tool", "execute_code"),
+                tool=tool_name,
                 risk_level=s.get("risk_level", "low"),
-                dependencies=s.get("dependencies", []),
+                dependencies=dependencies,
                 status="pending"
             ))
 
@@ -43,7 +49,7 @@ class PlannerEngine:
             status="draft",
             explanation=explanation,
             steps=steps,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         # Persist to database
@@ -135,5 +141,79 @@ class PlannerEngine:
         )
 
         return current_plan
+
+    async def edit_plan(self, session_id: str, plan: PlanModel, request: PlanEditRequest) -> PlanModel:
+        if plan.status not in ("draft", "revised"):
+            raise ValueError("Only a draft or revised plan can be edited")
+
+        if request.action == "add":
+            if not request.description or not request.tool:
+                raise ValueError("Adding a step requires description and tool")
+            if not tool_registry.get_tool(request.tool):
+                raise ValueError(f"Unknown tool: {request.tool}")
+            step_id = f"{session_id[:8]}-step-{uuid.uuid4().hex[:8]}"
+            plan.steps.append(StepBase(
+                id=step_id,
+                step_order=len(plan.steps) + 1,
+                description=request.description.strip(),
+                tool=request.tool,
+                risk_level=request.risk_level,
+                status="pending",
+            ))
+        elif request.action == "remove":
+            if not request.step_id:
+                raise ValueError("Removing a step requires step_id")
+            plan.steps = [s for s in plan.steps if s.id != request.step_id]
+        elif request.action == "reorder":
+            wanted = request.ordered_step_ids
+            current = {s.id: s for s in plan.steps}
+            if set(wanted) != set(current) or len(wanted) != len(current):
+                raise ValueError("ordered_step_ids must contain every plan step exactly once")
+            plan.steps = [current[step_id] for step_id in wanted]
+        else:
+            raise ValueError(f"Unsupported plan edit action: {request.action}")
+
+        for index, step in enumerate(plan.steps, 1):
+            step.step_order = index
+
+        plan.version += 1
+        plan.status = "revised"
+        plan.explanation = "Plan edited by user."
+
+        async with AsyncSessionLocal() as db:
+            await db.execute(update(DBPlan).where(DBPlan.id == plan.id).values(
+                version=plan.version,
+                status=plan.status,
+                explanation=plan.explanation,
+            ))
+            existing = await db.execute(select(DBStep).where(DBStep.plan_id == plan.id))
+            existing_steps = {row.id: row for row in existing.scalars().all()}
+            current_ids = {step.id for step in plan.steps}
+            for step_id in set(existing_steps) - current_ids:
+                await db.execute(delete(DBStep).where(DBStep.id == step_id))
+            for step in plan.steps:
+                values = dict(
+                    plan_id=plan.id,
+                    step_order=step.step_order,
+                    description=step.description,
+                    tool=step.tool,
+                    risk_level=step.risk_level,
+                    dependencies_json=json.dumps(step.dependencies),
+                    status=step.status,
+                    result_summary=step.result_summary,
+                )
+                if step.id in existing_steps:
+                    await db.execute(update(DBStep).where(DBStep.id == step.id).values(**values))
+                else:
+                    db.add(DBStep(id=step.id, **values))
+            await db.commit()
+
+        audit_logger.log_event(
+            session_id=session_id,
+            event_type="plan_edited",
+            actor="user",
+            details={"action": request.action, "version": plan.version},
+        )
+        return plan
 
 planner_engine = PlannerEngine()

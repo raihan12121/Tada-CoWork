@@ -4,31 +4,33 @@ import {
   Trash2, 
   Plus, 
   Power,
-  ShieldCheck
+  ShieldCheck,
+  Pencil,
+  Download
 } from 'lucide-react';
 import type { MemoryItem } from '../types';
 import { api } from '../services/api';
 
 export const MemoryManager: React.FC = () => {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [isEnabled, setIsEnabled] = useState(true);
+  const [isEnabled, setIsEnabled] = useState(false);
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [newType, setNewType] = useState<'preference' | 'fact' | 'summary'>('preference');
   const [newKey, setNewKey] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
 
-  const loadMemories = async () => {
-    try {
-      const items = await api.listMemories();
-      setMemories(items);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
   useEffect(() => {
-    loadMemories();
+    let ignore = false;
+    api.listMemories().then((items) => {
+      if (!ignore) setMemories(items);
+    }).catch(console.error);
+    api.getMemoryStatus().then((status) => setIsEnabled(status.enabled)).catch(console.error);
+    return () => { ignore = true; };
   }, []);
 
   const handleToggle = async () => {
@@ -50,6 +52,24 @@ export const MemoryManager: React.FC = () => {
     setNewContent('');
     setNewKey('');
     setShowAddModal(false);
+  };
+
+  const handleEdit = async (id: string) => {
+    if (!editingContent.trim()) return;
+    const updated = await api.updateMemory(id, editingContent.trim());
+    setMemories(memories.map((memory) => memory.id === id ? updated : memory));
+    setEditingId(null);
+    setEditingContent('');
+  };
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(memories, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'coagent-memory.json';
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   const filteredMemories = filterType === 'all' 
@@ -82,6 +102,14 @@ export const MemoryManager: React.FC = () => {
           >
             <Power className="w-3.5 h-3.5" />
             <span>{isEnabled ? 'Long-Term Memory: ON' : 'Memory: OFF'}</span>
+          </button>
+
+          <button
+            onClick={handleExport}
+            className="flex items-center space-x-1 bg-[#21262d] hover:bg-[#30363d] text-gray-300 text-xs font-medium px-3 py-1.5 rounded-lg transition"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export</span>
           </button>
 
           <button
@@ -147,19 +175,41 @@ export const MemoryManager: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-white leading-relaxed">{mem.content}</p>
+                {editingId === mem.id ? (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      value={editingContent}
+                      onChange={(event) => setEditingContent(event.target.value)}
+                      className="flex-1 bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+                      autoFocus
+                    />
+                    <button onClick={() => handleEdit(mem.id)} className="text-xs text-emerald-300 hover:text-emerald-200">Save</button>
+                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-400 hover:text-white">Cancel</button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-white leading-relaxed">{mem.content}</p>
+                )}
                 <div className="text-[10px] text-gray-500">
                   Recorded on {new Date(mem.created_at).toLocaleDateString()}
                 </div>
               </div>
 
-              <button
-                onClick={() => handleDelete(mem.id)}
-                className="text-gray-500 hover:text-rose-400 p-1.5 rounded transition"
-                title="Delete memory item"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center">
+                <button
+                  onClick={() => { setEditingId(mem.id); setEditingContent(mem.content); }}
+                  className="text-gray-500 hover:text-indigo-300 p-1.5 rounded transition"
+                  title="Edit memory item"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(mem.id)}
+                  className="text-gray-500 hover:text-rose-400 p-1.5 rounded transition"
+                  title="Delete memory item"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))
         )}

@@ -18,6 +18,8 @@ MEDIUM_RISK_TOOLS = {
     "edit_file",
     "execute_code",
     "create_document"
+    ,"move_file"
+    ,"copy_file"
 }
 
 LOW_RISK_TOOLS = {
@@ -58,6 +60,24 @@ class SafetyEngine:
             (risk_level, requires_approval, consequence_explanation)
         """
         pre_approved = pre_approved_medium_classes or set()
+
+        if tool_name == "browser_automation":
+            action = str(input_params.get("action", "")).lower()
+            if action in {"takeover", "login", "payment", "submit"}:
+                return "high", True, "Browser takeover is required for login, payment, CAPTCHA, or external submission actions."
+            return "low", False, "Scoped browser research action."
+
+        if tool_name in {"slack", "google_drive", "github", "webhook", "gmail", "outlook"}:
+            action = str(input_params.get("action", "")).lower()
+            if tool_name == "slack" and action == "list_channels":
+                return "low", False, "Read-only Slack channel lookup."
+            if tool_name == "github" and action in {"list_issues", "read_issue"}:
+                return "low", False, "Read-only GitHub lookup."
+            if tool_name == "google_drive" and action == "search":
+                return "low", False, "Read-only Google Drive search."
+            if tool_name in {"gmail", "outlook"} and action in {"list_messages", "read_message"}:
+                return "low", False, "Read-only email lookup."
+            return "high", True, f"External connector action '{tool_name}:{action or 'request'}' changes or sends data outside the sandbox."
         
         # Rule 3.4: Content-triggered actions are elevated to High Risk
         if is_triggered_by_untrusted_content:
@@ -76,7 +96,7 @@ class SafetyEngine:
 
         # Medium risk classification
         if tool_name in MEDIUM_RISK_TOOLS or tool_name.startswith("write_") or tool_name.startswith("edit_"):
-            target = input_params.get("path") or "sandbox filesystem"
+            target = input_params.get("path") or input_params.get("source") or "sandbox filesystem"
             consequence = f"Modifying files or executing code in '{target}'."
             
             # Check if medium risk pre-approved for this session (rules.md §2.1)

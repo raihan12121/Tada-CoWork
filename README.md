@@ -81,15 +81,30 @@ Open `http://localhost:5173` in your browser.
 
 ## 🔒 Configuration & Environment Variables
 
-Copy `.env.example` to `.env` to configure live LLM providers (optional; Coagent includes an offline knowledge engine that runs fully deterministically out-of-the-box without API keys):
+Copy `.env.example` to `.env`. Offline heuristic planning is for development only; production deployments must configure a real model provider, a non-empty bridge secret, API/admin authentication, and the Docker or managed sandbox backend.
 
 ```env
-LLM_PROVIDER=offline_heuristic  # Or "anthropic", "openai", "gemini"
+LLM_PROVIDER=offline_heuristic  # Development only; use anthropic/openai/gemini in production
 ANTHROPIC_API_KEY=your_key_here
 OPENAI_API_KEY=your_key_here
 GEMINI_API_KEY=your_key_here
-BRIDGE_SECRET=coagent_local_bridge_secret_key_2026
+BRIDGE_SECRET=generate-a-random-secret
+COAGENT_API_AUTH_TOKEN=generate-a-random-api-token
+COAGENT_ADMIN_TOKEN=generate-a-random-admin-token
+SANDBOX_BACKEND=docker
+SANDBOX_NETWORK=none
+COAGENT_DELIVERY_MODE=preview
 ```
+
+### Optional local bridge
+
+Run the authenticated companion transport with explicitly granted folders:
+
+```bash
+python bridge/agent.py --serve --token "<same BRIDGE_SECRET>" --folder "D:/Downloads"
+```
+
+Set `COAGENT_BRIDGE_AGENT_URL=http://127.0.0.1:8765` in the orchestrator environment. Browser control requires an installed Playwright runtime in the bridge environment and always returns takeover-required for login, payment, or CAPTCHA work.
 
 ---
 

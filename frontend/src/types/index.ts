@@ -83,6 +83,12 @@ export interface Session {
   updated_at: string;
   tool_calls_count: number;
   total_cost_usd: number;
+  enabled_tools: string[];
+  granted_folders: string[];
+  granted_scopes: string[];
+  max_steps: number;
+  max_tool_calls: number;
+  max_runtime_seconds: number;
 }
 
 export interface MemoryItem {

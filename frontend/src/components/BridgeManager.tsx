@@ -10,14 +10,14 @@ import {
 import type { BridgeStatus } from '../types';
 import { api } from '../services/api';
 
-export const BridgeManager: React.FC = () => {
+export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSessionId }) => {
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [newFolder, setNewFolder] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const loadStatus = async () => {
     try {
-      const data = await api.getBridgeStatus();
+      const data = await api.getBridgeStatus(activeSessionId);
       setStatus(data);
     } catch (err) {
       console.error(err);
@@ -25,15 +25,20 @@ export const BridgeManager: React.FC = () => {
   };
 
   useEffect(() => {
-    loadStatus();
-  }, []);
+    let ignore = false;
+    api.getBridgeStatus(activeSessionId).then((data) => {
+      if (!ignore) setStatus(data);
+    }).catch(console.error);
+    return () => { ignore = true; };
+  }, [activeSessionId]);
 
   const handleGrant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolder.trim()) return;
     setIsLoading(true);
     try {
-      await api.grantFolder(newFolder.trim());
+      await api.grantFolder(newFolder.trim(), activeSessionId);
+      if (activeSessionId) await api.updateSessionPermission(activeSessionId, 'grant', 'folder', newFolder.trim());
       setNewFolder('');
       await loadStatus();
     } finally {
@@ -42,7 +47,13 @@ export const BridgeManager: React.FC = () => {
   };
 
   const handleRevoke = async (folder: string) => {
-    await api.revokeFolder(folder);
+    await api.revokeFolder(folder, activeSessionId);
+    if (activeSessionId) await api.updateSessionPermission(activeSessionId, 'revoke', 'folder', folder);
+    await loadStatus();
+  };
+
+  const handleBrowserToggle = async () => {
+    await api.toggleBrowser(!status?.allow_browser_control, activeSessionId);
     await loadStatus();
   };
 
@@ -142,9 +153,12 @@ export const BridgeManager: React.FC = () => {
             <p className="text-[11px] text-gray-400">Allows agent to browse research sites with automatic handover at login/checkout.</p>
           </div>
         </div>
-        <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full">
-          Active
-        </span>
+        <button
+          onClick={handleBrowserToggle}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${status?.allow_browser_control ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}
+        >
+          {status?.allow_browser_control ? 'Granted' : 'Off'}
+        </button>
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ interface ArtifactPanelProps {
 
 export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifacts, sessionId }) => {
   const [previewData, setPreviewData] = useState<{ filename: string; content: string; type: string } | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const getFileIcon = (fileType: string) => {
     switch (fileType.toLowerCase()) {
@@ -30,8 +31,6 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifacts, session
         return <FileText className="w-5 h-5 text-blue-400" />;
       case 'pptx':
         return <Presentation className="w-5 h-5 text-amber-400" />;
-      case 'md':
-      case 'txt':
       default:
         return <FileCode className="w-5 h-5 text-purple-400" />;
     }
@@ -39,10 +38,13 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifacts, session
 
   const handlePreview = async (filename: string) => {
     try {
+      setPreviewError(null);
       const data = await api.previewArtifact(sessionId, filename);
       setPreviewData(data);
     } catch (err) {
-      alert('Failed to load artifact preview.');
+      console.error('Failed to load preview:', err);
+      setPreviewError(`Unable to load preview for ${filename}. Click download instead.`);
+      setTimeout(() => setPreviewError(null), 4000);
     }
   };
 
@@ -54,6 +56,12 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifacts, session
           Deliverables & Artifacts ({artifacts.length})
         </h3>
       </div>
+
+      {previewError && (
+        <div className="mb-3 p-2 bg-red-900/30 border border-red-500/40 rounded-lg text-xs text-red-300">
+          {previewError}
+        </div>
+      )}
 
       {artifacts.length === 0 ? (
         <div className="text-center py-6 text-xs text-gray-500 italic">

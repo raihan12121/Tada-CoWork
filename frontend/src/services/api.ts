@@ -1,6 +1,7 @@
-import type { Session, MemoryItem, Schedule, BridgeStatus } from '../types';
+import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel } from '../types';
 
 const API_BASE = '/v1';
+const BRIDGE_TOKEN = import.meta.env.VITE_BRIDGE_TOKEN || (import.meta.env.DEV ? 'dev-only-local-bridge-secret' : '');
 
 export const api = {
   // Sessions
@@ -17,6 +18,45 @@ export const api = {
   async getSession(id: string): Promise<Session> {
     const res = await fetch(`${API_BASE}/sessions/${id}`);
     if (!res.ok) throw new Error('Failed to fetch session');
+    return res.json();
+  },
+
+  async getSessionEvents(id: string): Promise<ActivityEvent[]> {
+    const res = await fetch(`${API_BASE}/sessions/${id}/events`);
+    if (!res.ok) throw new Error('Failed to fetch session events');
+    return res.json();
+  },
+
+  async getSessionUsage(id: string): Promise<{ session_id: string; tool_calls: number; tool_call_limit: number; steps_completed: number; step_limit: number; estimated_cost_usd: number; runtime_limit_seconds: number }> {
+    const res = await fetch(`${API_BASE}/sessions/${id}/usage`);
+    if (!res.ok) throw new Error('Failed to fetch session usage');
+    return res.json();
+  },
+
+  async editPlan(id: string, payload: {
+    action: 'add' | 'remove' | 'reorder';
+    step_id?: string;
+    description?: string;
+    tool?: string;
+    risk_level?: RiskLevel;
+    ordered_step_ids?: string[];
+  }): Promise<Plan> {
+    const res = await fetch(`${API_BASE}/sessions/${id}/plan/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to edit plan');
+    return res.json();
+  },
+
+  async updateSessionPermission(id: string, action: 'grant' | 'revoke', resourceType: 'tool' | 'folder' | 'scope', value: string): Promise<Session> {
+    const res = await fetch(`${API_BASE}/sessions/${id}/permissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, resource_type: resourceType, value })
+    });
+    if (!res.ok) throw new Error('Failed to update session permission');
     return res.json();
   },
 
@@ -107,6 +147,22 @@ export const api = {
     if (!res.ok) throw new Error('Failed to toggle memory');
   },
 
+  async getMemoryStatus(): Promise<{ workspace_id: string; enabled: boolean }> {
+    const res = await fetch(`${API_BASE}/memory/status?workspace_id=default`);
+    if (!res.ok) throw new Error('Failed to fetch memory status');
+    return res.json();
+  },
+
+  async updateMemory(id: string, content: string, key?: string): Promise<MemoryItem> {
+    const res = await fetch(`${API_BASE}/memory/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, key })
+    });
+    if (!res.ok) throw new Error('Failed to update memory');
+    return res.json();
+  },
+
   // Schedules
   async listSchedules(): Promise<Schedule[]> {
     const res = await fetch(`${API_BASE}/schedules`);
@@ -136,41 +192,78 @@ export const api = {
   },
 
   // Bridge
-  async getBridgeStatus(): Promise<BridgeStatus> {
-    const res = await fetch(`${API_BASE}/bridge/status`);
+  async getBridgeStatus(sessionId?: string): Promise<BridgeStatus> {
+    const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE}/bridge/status${query}`);
     if (!res.ok) throw new Error('Failed to fetch bridge status');
     return res.json();
   },
 
-  async grantFolder(folderPath: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/bridge/grant_folder?folder_path=${encodeURIComponent(folderPath)}`, {
-      method: 'POST'
+  async grantFolder(folderPath: string, sessionId?: string): Promise<void> {
+    const sessionQuery = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE}/bridge/grant_folder?folder_path=${encodeURIComponent(folderPath)}${sessionQuery}`, {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': BRIDGE_TOKEN }
     });
     if (!res.ok) throw new Error('Failed to grant folder');
   },
 
-  async revokeFolder(folderPath: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/bridge/revoke_folder?folder_path=${encodeURIComponent(folderPath)}`, {
-      method: 'POST'
+  async revokeFolder(folderPath: string, sessionId?: string): Promise<void> {
+    const sessionQuery = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE}/bridge/revoke_folder?folder_path=${encodeURIComponent(folderPath)}${sessionQuery}`, {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': BRIDGE_TOKEN }
     });
     if (!res.ok) throw new Error('Failed to revoke folder');
   },
 
+  async toggleBrowser(enable: boolean, sessionId?: string): Promise<void> {
+    const sessionQuery = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE}/bridge/toggle_browser?enable=${enable}${sessionQuery}`, {
+      method: 'POST',
+      headers: { 'X-Bridge-Token': BRIDGE_TOKEN }
+    });
+    if (!res.ok) throw new Error('Failed to update browser permission');
+  },
+
   // Admin
   async exportAuditLog(): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/admin/audit/export`);
+    const res = await fetch(`${API_BASE}/admin/audit/export`, { headers: { 'X-Admin-Token': BRIDGE_TOKEN } });
     if (!res.ok) throw new Error('Failed to export audit log');
     return res.json();
   },
 
   async verifyAuditIntegrity(): Promise<{ integrity_verified: boolean; error?: string }> {
-    const res = await fetch(`${API_BASE}/admin/audit/verify`);
+    const res = await fetch(`${API_BASE}/admin/audit/verify`, { headers: { 'X-Admin-Token': BRIDGE_TOKEN } });
     if (!res.ok) throw new Error('Failed to verify audit');
     return res.json();
   },
 
   async emergencyKill(): Promise<void> {
-    const res = await fetch(`${API_BASE}/admin/kill_all`, { method: 'POST' });
+    const res = await fetch(`${API_BASE}/admin/kill_all`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': BRIDGE_TOKEN }
+    });
     if (!res.ok) throw new Error('Failed to trigger emergency kill');
+  },
+
+  async getOrganizationPolicy(): Promise<any> {
+    const res = await fetch(`${API_BASE}/admin/organization/policy`, { headers: { 'X-Admin-Token': BRIDGE_TOKEN } });
+    if (!res.ok) throw new Error('Failed to fetch organization policy');
+    return res.json();
+  },
+
+  async updateOrganizationPolicy(payload: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/admin/organization/policy`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': BRIDGE_TOKEN }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to update organization policy');
+    return res.json();
+  },
+
+  async getAdminUsage(): Promise<{ session_count: number; tool_calls: number; estimated_cost_usd: number; active_sessions: number }> {
+    const res = await fetch(`${API_BASE}/admin/usage`, { headers: { 'X-Admin-Token': BRIDGE_TOKEN } });
+    if (!res.ok) throw new Error('Failed to fetch organization usage');
+    return res.json();
   }
 };

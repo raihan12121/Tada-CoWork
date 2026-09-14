@@ -76,6 +76,22 @@ class WriteFileTool(BaseTool):
             "snapshot_created": snapshot_path
         }
 
+class CreateFileTool(WriteFileTool):
+    name = "create_file"
+    description = "Creates a new text file inside the session sandbox; refuses to overwrite an existing file."
+    risk_level = "medium"
+
+    async def execute(self, session_id: str, **kwargs) -> Dict[str, Any]:
+        rel_path = kwargs.get("path", "")
+        sandbox = sandbox_manager.get_or_create(session_id)
+        target = sandbox.resolve_path(rel_path)
+        if target.exists():
+            return {"success": False, "error": f"File already exists: {rel_path}"}
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = kwargs.get("content", "")
+        target.write_text(content, encoding="utf-8")
+        return {"success": True, "path": rel_path, "bytes_written": len(content), "created": True}
+
 class ListFilesTool(BaseTool):
     name = "list_files"
     description = "Lists files and subdirectories in the sandbox directory."
@@ -140,3 +156,33 @@ class DeleteFileTool(BaseTool):
             "message": f"File '{rel_path}' safely moved to session trash.",
             "trash_reference": str(trash_target.name)
         }
+
+
+class MoveFileTool(BaseTool):
+    name = "move_file"
+    description = "Moves or renames a file within the session sandbox."
+    risk_level = "medium"
+
+    def get_parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Relative source path."},
+                "destination": {"type": "string", "description": "Relative destination path."},
+            },
+            "required": ["source", "destination"],
+        }
+
+    async def execute(self, session_id: str, **kwargs) -> Dict[str, Any]:
+        source = kwargs.get("source", "")
+        destination = kwargs.get("destination", "")
+        sandbox = sandbox_manager.get_or_create(session_id)
+        source_path = sandbox.resolve_path(source)
+        destination_path = sandbox.resolve_path(destination)
+        if not source_path.exists():
+            return {"success": False, "error": f"Source not found: {source}"}
+        if destination_path.exists():
+            return {"success": False, "error": f"Destination already exists: {destination}"}
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source_path), str(destination_path))
+        return {"success": True, "source": source, "destination": destination}

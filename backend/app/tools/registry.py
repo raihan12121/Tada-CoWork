@@ -1,14 +1,16 @@
 from typing import Dict, Any, List, Optional
 from app.tools.base import BaseTool
 from app.tools.code_exec import ExecuteCodeTool
-from app.tools.file_ops import ReadFileTool, WriteFileTool, ListFilesTool, DeleteFileTool
+from app.tools.file_ops import ReadFileTool, WriteFileTool, CreateFileTool, ListFilesTool, DeleteFileTool, MoveFileTool
 from app.tools.doc_gen import CreateDocumentTool
 from app.tools.web_search import WebSearchTool
 from app.tools.web_fetch import WebFetchTool
 from app.tools.communication import SendEmailTool, SendSlackMessageTool
+from app.tools.browser import BrowserAutomationTool
 from app.connectors.google_drive import GoogleDriveConnector
 from app.connectors.github import GitHubConnector
 from app.connectors.slack import SlackConnector, WebhookConnector
+from app.connectors.email import GmailConnector, OutlookConnector
 
 class ToolRegistry:
     def __init__(self):
@@ -20,17 +22,22 @@ class ToolRegistry:
             ExecuteCodeTool(),
             ReadFileTool(),
             WriteFileTool(),
+            CreateFileTool(),
             ListFilesTool(),
             DeleteFileTool(),
+            MoveFileTool(),
             CreateDocumentTool(),
             WebSearchTool(),
             WebFetchTool(),
             SendEmailTool(),
             SendSlackMessageTool(),
+            BrowserAutomationTool(),
             GoogleDriveConnector(),
             GitHubConnector(),
             SlackConnector(),
             WebhookConnector()
+            ,GmailConnector()
+            ,OutlookConnector()
         ]
         for t in default_tools:
             self.register_tool(t)

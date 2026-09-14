@@ -1,0 +1,12 @@
+[
+  {"id": "UC-1", "task": "Organize my Downloads folder and produce a summary report.", "required_tools": ["list_files", "move_file", "create_document"], "requires_high_risk_approval": false},
+  {"id": "UC-2", "task": "Build an expense spreadsheet from receipt data with totals.", "required_tools": ["read_file", "execute_code", "create_document"], "required_artifact_types": ["xlsx"]},
+  {"id": "UC-3", "task": "Turn meeting notes into a first-draft quarterly report.", "required_tools": ["read_file", "create_document"], "required_artifact_types": ["docx"]},
+  {"id": "UC-4", "task": "Research competitors and produce a comparison report with citations.", "required_tools": ["web_search", "web_fetch", "create_document"]},
+  {"id": "UC-5", "task": "Summarize support tickets and draft a weekly email without sending it.", "required_tools": ["read_file", "create_document", "send_email"], "requires_high_risk_approval": true},
+  {"id": "UC-6", "task": "Build a status slide deck from last month's numbers.", "required_tools": ["execute_code", "create_document"], "required_artifact_types": ["pptx"]},
+  {"id": "UC-7", "task": "Research flight options and prepare booking checkout for user takeover.", "required_tools": ["browser_automation"], "requires_high_risk_approval": true},
+  {"id": "UC-8", "task": "Find duplicate files and propose reversible cleanup.", "required_tools": ["execute_code", "delete_file"], "requires_high_risk_approval": true},
+  {"id": "UC-9", "task": "Resume a paused research task and continue the plan.", "required_tools": ["web_search", "create_document"]},
+  {"id": "UC-10", "task": "Build this month's report using remembered formatting preferences.", "required_tools": ["create_document"], "uses_long_term_memory": true}
+]

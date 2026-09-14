@@ -1,8 +1,11 @@
 import urllib.parse
+import html
+import re
 from typing import Dict, Any, List
 import httpx
 from app.tools.base import BaseTool
 from app.core.safety import safety_engine
+from app.config import settings
 
 class WebSearchTool(BaseTool):
     name = "web_search"
@@ -49,8 +52,51 @@ class WebSearchTool(BaseTool):
         except Exception:
             pass
 
-        # If external API is unreachable or returned few results, supply grounded knowledge
         if not results:
+            # The Instant Answer endpoint often has no entries for ordinary
+            # queries. Use DuckDuckGo's public HTML result page as a second
+            # live source before reporting that search is unavailable.
+            try:
+                encoded_query = urllib.parse.quote(query)
+                url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    resp = await client.get(url, headers={"User-Agent": "Coagent/1.0"})
+                if resp.status_code == 200:
+                    links = re.findall(r'class="result__a" href="([^"]+)"[^>]*>(.*?)</a>', resp.text, flags=re.IGNORECASE | re.DOTALL)
+                    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a?>', resp.text, flags=re.IGNORECASE | re.DOTALL)
+                    for idx, (link, title_html) in enumerate(links[:5]):
+                        title = re.sub(r"<[^>]+>", "", html.unescape(title_html)).strip()
+                        snippet_html = snippets[idx] if idx < len(snippets) else "Live DuckDuckGo result"
+                        snippet = re.sub(r"<[^>]+>", "", html.unescape(snippet_html)).strip()
+                        results.append({"title": title, "url": html.unescape(link), "snippet": snippet})
+            except Exception:
+                pass
+
+        if not results:
+            # Bing is a second live provider for environments where DuckDuckGo
+            # is rate-limited. Results are still parsed as untrusted data and
+            # never replaced by local fixtures.
+            try:
+                encoded_query = urllib.parse.quote(query)
+                url = f"https://www.bing.com/search?q={encoded_query}"
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    resp = await client.get(url, headers={"User-Agent": "Coagent/1.0"})
+                if resp.status_code == 200:
+                    entries = re.findall(r'<li class="b_algo".*?<h2><a href="([^"]+)"[^>]*>(.*?)</a>.*?(?:<p>(.*?)</p>)?', resp.text, flags=re.IGNORECASE | re.DOTALL)
+                    for link, title_html, snippet_html in entries[:5]:
+                        results.append({
+                            "title": re.sub(r"<[^>]+>", "", html.unescape(title_html)).strip(),
+                            "url": html.unescape(link),
+                            "snippet": re.sub(r"<[^>]+>", "", html.unescape(snippet_html or "")).strip(),
+                        })
+            except Exception:
+                pass
+
+        # Never fabricate research results. Fixtures are available only when
+        # an explicit demo flag is enabled for UI development.
+        if not results:
+            if not settings.ALLOW_DEMO_FIXTURES:
+                return {"success": False, "query": query, "error": "No live search results were available."}
             results = [
                 {
                     "title": f"Industry Analysis: {query}",

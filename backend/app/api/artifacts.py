@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -6,11 +7,17 @@ from app.sandbox.process_sandbox import sandbox_manager
 
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 
+SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]+$")
+
 @router.get("/download/{session_id}/{filename}")
 async def download_artifact(session_id: str, filename: str):
-    sandbox = sandbox_manager.get_or_create(session_id)
+    if not SESSION_ID_PATTERN.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    sandbox = sandbox_manager.get_existing(session_id)
     safe_name = Path(filename).name
-    file_path = sandbox.artifacts_dir / safe_name
+    if ".." in filename or safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename format")
+    file_path = (sandbox.artifacts_dir / safe_name) if sandbox else (sandbox_manager.archived_artifacts_dir(session_id) / safe_name)
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file not found")
@@ -23,9 +30,13 @@ async def download_artifact(session_id: str, filename: str):
 
 @router.get("/preview/{session_id}/{filename}")
 async def preview_artifact(session_id: str, filename: str):
-    sandbox = sandbox_manager.get_or_create(session_id)
+    if not SESSION_ID_PATTERN.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    sandbox = sandbox_manager.get_existing(session_id)
     safe_name = Path(filename).name
-    file_path = sandbox.artifacts_dir / safe_name
+    if ".." in filename or safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename format")
+    file_path = (sandbox.artifacts_dir / safe_name) if sandbox else (sandbox_manager.archived_artifacts_dir(session_id) / safe_name)
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file not found")

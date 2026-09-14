@@ -26,9 +26,7 @@ class TaskGraphEngine:
                     remaining_steps.remove(step)
 
             if not current_tier:
-                # Cycle or unresolved dependency detected: fallback to sequential execution
-                tiers.append(remaining_steps)
-                break
+                raise ValueError("Plan contains a cycle or unresolved step dependency")
 
             for step in current_tier:
                 completed_ids.add(step.id)

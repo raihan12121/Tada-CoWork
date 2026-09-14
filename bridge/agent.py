@@ -2,6 +2,10 @@ import os
 import sys
 import time
 import argparse
+import json
+import threading
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import List, Optional
 
@@ -14,6 +18,9 @@ class LocalBridgeAgent:
     def __init__(self, token: str, granted_folders: Optional[List[str]] = None):
         self.token = token
         self.granted_folders = [Path(f).resolve() for f in (granted_folders or [])]
+        self._playwright = None
+        self._browser = None
+        self._page = None
 
     def add_folder(self, folder_path: str):
         p = Path(folder_path).resolve()
@@ -49,12 +56,151 @@ class LocalBridgeAgent:
         safe_path = self.verify_path_access(folder_path)
         return [f.name for f in safe_path.iterdir()]
 
+    def file_action(self, payload: dict) -> dict:
+        folder = Path(payload.get("folder", "")).resolve()
+        relative_file = payload.get("relative_file", "")
+        action = payload.get("action", "read")
+        if folder not in self.granted_folders:
+            raise PermissionError("Folder is not granted by this bridge process.")
+        target = self.verify_path_access(str(folder / relative_file))
+        if action == "list":
+            if not target.is_dir():
+                raise FileNotFoundError("Granted directory not found.")
+            return {"action": "list", "path": str(target), "items": [item.name for item in target.iterdir()]}
+        if action == "read":
+            if not target.is_file():
+                raise FileNotFoundError("Granted file not found.")
+            return {"action": "read", "path": str(target), "content": target.read_text(encoding="utf-8", errors="replace")}
+        raise ValueError(f"Unsupported bridge action: {action}")
+
+    def browser_action(self, payload: dict) -> dict:
+        """Execute a browser action through an optional Playwright install."""
+        action = payload.get("action", "")
+        if action == "takeover":
+            return {"success": False, "status": "takeover_required", "message": "User takeover is required."}
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return {"success": False, "status": "unsupported", "error": "Install Playwright in the bridge environment to enable browser control."}
+        try:
+            if self._playwright is None:
+                self._playwright = sync_playwright().start()
+                self._browser = self._playwright.chromium.launch(headless=False)
+                self._page = self._browser.new_page()
+            page = self._page
+            if action == "navigate":
+                page.goto(payload.get("url", ""), wait_until="domcontentloaded")
+                return {"success": True, "status": "navigated", "url": page.url}
+            if action == "click":
+                page.locator(payload.get("selector", "")).click()
+                return {"success": True, "status": "clicked", "url": page.url}
+            if action == "type":
+                page.locator(payload.get("selector", "")).fill(payload.get("text", ""))
+                return {"success": True, "status": "typed", "url": page.url}
+            if action == "screenshot":
+                page.screenshot(path="coagent-screenshot.png", type="png")
+                return {"success": True, "status": "screenshot", "path": "coagent-screenshot.png", "url": page.url}
+            return {"success": False, "error": f"Unsupported browser action: {action}"}
+        except Exception as exc:
+            return {"success": False, "status": "browser_error", "error": str(exc)}
+
+def serve(agent: LocalBridgeAgent, host: str, port: int):
+    class Handler(BaseHTTPRequestHandler):
+        def _json(self, status: int, payload: dict):
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/health":
+                self._json(200, {"status": "alive", "granted_folders": [str(p) for p in agent.granted_folders]})
+            else:
+                self._json(404, {"error": "not found"})
+
+        def do_POST(self):
+            if self.headers.get("X-Bridge-Token") != agent.token:
+                self._json(401, {"error": "invalid bridge token"})
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            if self.path == "/browser":
+                result = agent.browser_action(payload)
+                self._json(200 if result.get("success") else 503, result)
+            elif self.path == "/file":
+                try:
+                    self._json(200, agent.file_action(payload))
+                except PermissionError as exc:
+                    self._json(403, {"error": str(exc)})
+                except FileNotFoundError as exc:
+                    self._json(404, {"error": str(exc)})
+                except Exception as exc:
+                    self._json(400, {"error": str(exc)})
+            else:
+                self._json(404, {"error": "not found"})
+
+        def log_message(self, *_args):
+            return
+
+    HTTPServer((host, port), Handler).serve_forever()
+
+def register_with_orchestrator(orchestrator: str, agent: LocalBridgeAgent, session_id: Optional[str], allow_browser: bool):
+    payload = json.dumps({
+        "client_name": "coagent-python-bridge",
+        "granted_folders": [str(folder) for folder in agent.granted_folders],
+        "allow_browser_control": allow_browser,
+        "session_id": session_id,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        f"{orchestrator.rstrip('/')}/v1/bridge/register",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-Bridge-Token": agent.token},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10):
+        pass
+
+    def heartbeat():
+        while True:
+            try:
+                heartbeat_request = urllib.request.Request(
+                    f"{orchestrator.rstrip('/')}/v1/bridge/heartbeat",
+                    headers={"X-Bridge-Token": agent.token},
+                    method="POST",
+                )
+                with urllib.request.urlopen(heartbeat_request, timeout=10):
+                    pass
+            except Exception:
+                pass
+            time.sleep(30)
+
+    threading.Thread(target=heartbeat, daemon=True).start()
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coagent Desktop Local Bridge Agent")
-    parser.add_argument("--token", default="coagent_local_bridge_secret_key_2026", help="Session bridge auth token")
+    parser.add_argument("--token", default=os.getenv("BRIDGE_SECRET", ""), help="Session bridge auth token")
     parser.add_argument("--folder", action="append", help="Grant folder path")
+    parser.add_argument("--serve", action="store_true", help="Run the authenticated bridge HTTP transport")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--orchestrator", default="", help="Orchestrator URL used to register this bridge")
+    parser.add_argument("--session-id", default=None, help="Session whose grants this bridge serves")
+    parser.add_argument("--allow-browser", action="store_true", help="Grant browser control for the registered session")
     args = parser.parse_args()
 
-    agent = LocalBridgeAgent(token=args.token, granted_folders=args.folder or ["."])
+    agent = LocalBridgeAgent(token=args.token, granted_folders=args.folder or [])
     print("[Bridge Active] Coagent Local Bridge Agent started.")
     print(f"[Bridge] Granted folders: {[str(p) for p in agent.granted_folders]}")
+    if args.serve:
+        if not agent.token:
+            raise SystemExit("A non-empty --token or BRIDGE_SECRET is required for bridge serving.")
+        if args.orchestrator:
+            try:
+                register_with_orchestrator(args.orchestrator, agent, args.session_id, args.allow_browser)
+                print("[Bridge] Registered with orchestrator.")
+            except Exception as exc:
+                print(f"[Bridge Warning] Orchestrator registration failed: {exc}")
+        print(f"[Bridge] HTTP transport listening on http://{args.host}:{args.port}")
+        serve(agent, args.host, args.port)

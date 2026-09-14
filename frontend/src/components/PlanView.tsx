@@ -212,11 +212,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   <option value="execute_code">execute_code</option>
                   <option value="create_document">create_document</option>
                   <option value="write_file">write_file</option>
+                  <option value="create_file">create_file</option>
+                  <option value="move_file">move_file</option>
                   <option value="read_file">read_file</option>
                   <option value="web_search">web_search</option>
                   <option value="web_fetch">web_fetch</option>
                   <option value="delete_file">delete_file</option>
                   <option value="send_email">send_email</option>
+                  <option value="browser_automation">browser_automation</option>
                 </select>
                 <select
                   value={newRisk}
