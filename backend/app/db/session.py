@@ -24,6 +24,7 @@ class DBSession(Base):
     enabled_tools_json = Column(Text, default="[]")
     granted_folders_json = Column(Text, default="[]")
     granted_scopes_json = Column(Text, default="[]")
+    granted_domains_json = Column(Text, default="[]")
     max_steps = Column(Integer, default=30)
     max_tool_calls = Column(Integer, default=50)
     max_runtime_seconds = Column(Integer, default=300)
@@ -34,6 +35,20 @@ class DBSession(Base):
     approvals = relationship("DBApproval", back_populates="session", cascade="all, delete-orphan")
     artifacts = relationship("DBArtifact", back_populates="session", cascade="all, delete-orphan")
     activity_events = relationship("DBActivityEvent", back_populates="session", cascade="all, delete-orphan")
+
+class DBExecutionJob(Base):
+    """Durable execution intent and lease for restart/multi-worker recovery."""
+    __tablename__ = "execution_jobs"
+
+    id = Column(String, primary_key=True)
+    session_id = Column(String, nullable=False, unique=True)
+    status = Column(String, default="queued")  # queued, running, completed, failed, cancelled
+    attempts = Column(Integer, default=0)
+    worker_id = Column(String, nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
 class DBPlan(Base):
     __tablename__ = "plans"
@@ -60,6 +75,7 @@ class DBStep(Base):
     dependencies_json = Column(Text, default="[]")
     status = Column(String, default="pending")
     result_summary = Column(Text, nullable=True)
+    failure_count = Column(Integer, default=0)
     
     plan = relationship("DBPlan", back_populates="steps")
 
@@ -131,6 +147,7 @@ class DBSchedule(Base):
     __tablename__ = "schedules"
     
     id = Column(String, primary_key=True)
+    workspace_id = Column(String, default="default")
     title = Column(String, nullable=False)
     task_template = Column(Text, nullable=False)
     cron_expression = Column(String, nullable=False)
@@ -138,6 +155,10 @@ class DBSchedule(Base):
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String, nullable=True)
+    enabled_tools_json = Column(Text, default="[]")
+    granted_scopes_json = Column(Text, default="[]")
+    granted_folders_json = Column(Text, default="[]")
+    granted_domains_json = Column(Text, default="[]")
 
 class DBConnector(Base):
     __tablename__ = "connectors"
@@ -183,6 +204,13 @@ class DBConnectorReview(Base):
     reviewed_by = Column(String, nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now)
+    package_url = Column(String, nullable=True)
+    package_sha256 = Column(String, nullable=True)
+    signature = Column(Text, nullable=True)
+    data_access_json = Column(Text, default="[]")
+    package_path = Column(Text, nullable=True)
+    scan_status = Column(String, default="not_submitted")
+    scan_report_json = Column(Text, default="{}")
 
 class DBActivityEvent(Base):
     __tablename__ = "activity_events"
@@ -197,7 +225,13 @@ class DBActivityEvent(Base):
 
     session = relationship("DBSession", back_populates="activity_events")
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
+_engine_kwargs = {"echo": False}
+if settings.DATABASE_URL.startswith("sqlite"):
+    # SQLite is the documented local runtime. Give short-lived background
+    # scheduler/executor transactions time to yield instead of failing with a
+    # spurious "database is locked" error during concurrent lifecycle work.
+    _engine_kwargs["connect_args"] = {"timeout": 30}
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 async def init_db():
@@ -215,10 +249,45 @@ async def init_db():
                 "max_tool_calls": "INTEGER DEFAULT 50",
                 "max_runtime_seconds": "INTEGER DEFAULT 300",
                 "granted_scopes_json": "TEXT DEFAULT '[]'",
+                "granted_domains_json": "TEXT DEFAULT '[]'",
             }
             for column, definition in additions.items():
                 if column not in existing:
                     await conn.execute(text(f"ALTER TABLE sessions ADD COLUMN {column} {definition}"))
+            result = await conn.execute(text("PRAGMA table_info(steps)"))
+            step_existing = {row[1] for row in result.fetchall()}
+            if "failure_count" not in step_existing:
+                await conn.execute(text("ALTER TABLE steps ADD COLUMN failure_count INTEGER DEFAULT 0"))
+            result = await conn.execute(text("PRAGMA table_info(workspaces)"))
+            workspace_existing = {row[1] for row in result.fetchall()}
+            if "memory_enabled" not in workspace_existing:
+                await conn.execute(text("ALTER TABLE workspaces ADD COLUMN memory_enabled BOOLEAN DEFAULT 0"))
+            result = await conn.execute(text("PRAGMA table_info(schedules)"))
+            schedule_existing = {row[1] for row in result.fetchall()}
+            schedule_additions = {
+                "workspace_id": "TEXT DEFAULT 'default'",
+                "enabled_tools_json": "TEXT DEFAULT '[]'",
+                "granted_scopes_json": "TEXT DEFAULT '[]'",
+                "granted_folders_json": "TEXT DEFAULT '[]'",
+                "granted_domains_json": "TEXT DEFAULT '[]'",
+            }
+            for column, definition in schedule_additions.items():
+                if column not in schedule_existing:
+                    await conn.execute(text(f"ALTER TABLE schedules ADD COLUMN {column} {definition}"))
+            result = await conn.execute(text("PRAGMA table_info(connector_reviews)"))
+            review_existing = {row[1] for row in result.fetchall()}
+            review_additions = {
+                "package_url": "TEXT",
+                "package_sha256": "TEXT",
+                "signature": "TEXT",
+                "data_access_json": "TEXT DEFAULT '[]'",
+                "package_path": "TEXT",
+                "scan_status": "TEXT DEFAULT 'not_submitted'",
+                "scan_report_json": "TEXT DEFAULT '{}'",
+            }
+            for column, definition in review_additions.items():
+                if column not in review_existing:
+                    await conn.execute(text(f"ALTER TABLE connector_reviews ADD COLUMN {column} {definition}"))
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:

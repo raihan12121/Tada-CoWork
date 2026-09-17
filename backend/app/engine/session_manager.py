@@ -1,10 +1,11 @@
 import asyncio
 import uuid
 import json
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from sqlalchemy import select, update
-from app.db.session import AsyncSessionLocal, DBSession, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent
+from sqlalchemy import select, update, or_, delete
+from app.db.session import AsyncSessionLocal, DBSession, DBExecutionJob, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent
 from app.models.schemas import (
     SessionModel, SessionCreate, PlanModel, StepBase, ArtifactModel, ApprovalRequest, ActivityFeedEvent
 )
@@ -12,6 +13,7 @@ from app.engine.planner import planner_engine
 from app.engine.executor import ExecutorSession
 from app.memory.long_term_memory import long_term_memory
 from app.core.audit import audit_logger
+from app.core.org_policy import org_policy_manager
 from app.sandbox.process_sandbox import sandbox_manager
 
 class SessionManager:
@@ -19,6 +21,7 @@ class SessionManager:
         self._active_executors: Dict[str, ExecutorSession] = {}
         self._ws_subscribers: Dict[str, List[asyncio.Queue]] = {}
         self._background_tasks: Dict[str, asyncio.Task] = {}
+        self.worker_id = f"worker-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
     async def recover_interrupted_sessions(self) -> int:
         """Safely mark in-flight work as paused after an orchestrator restart.
@@ -36,6 +39,14 @@ class SessionManager:
                 session.updated_at = datetime.now(timezone.utc)
                 recovered += 1
                 audit_logger.log_event(session.id, "session_recovered_paused", "system", {"reason": "orchestrator_restart"})
+            stale_jobs = await db.execute(select(DBExecutionJob).where(DBExecutionJob.status == "running"))
+            for job in stale_jobs.scalars().all():
+                job.status = "queued"
+                job.worker_id = None
+                job.lease_until = None
+                job.updated_at = datetime.now(timezone.utc)
+                job.last_error = "Recovered after orchestrator restart; explicit resume is required."
+                audit_logger.log_event(job.session_id, "execution_job_requeued", "system", {"job_id": job.id, "reason": "orchestrator_restart"})
             await db.commit()
         return recovered
 
@@ -59,6 +70,7 @@ class SessionManager:
             await q.put(event)
 
     async def create_session(self, task_data: SessionCreate) -> SessionModel:
+        org_policy_manager.assert_data_region_available(task_data.workspace_id)
         session_id = str(uuid.uuid4())
         
         # Recall relevant long-term memory
@@ -80,6 +92,7 @@ class SessionManager:
                 ,enabled_tools_json=json.dumps(task_data.enabled_tools)
                 ,granted_folders_json=json.dumps(task_data.granted_folders)
                 ,granted_scopes_json=json.dumps(task_data.granted_scopes)
+                ,granted_domains_json=json.dumps(task_data.granted_domains)
             )
             db.add(db_sess)
             await db.commit()
@@ -131,12 +144,47 @@ class SessionManager:
             ,enabled_tools=enabled_tools
             ,granted_folders=task_data.granted_folders
             ,granted_scopes=task_data.granted_scopes
+            ,granted_domains=task_data.granted_domains
         )
 
     async def start_execution(self, session_id: str):
         session = await self.get_session(session_id)
         if not session or not session.plan:
             raise ValueError("Session or plan not found")
+
+        # Persist execution intent before starting an in-process worker. This
+        # makes a crash recoverable and gives competing workers a lease gate.
+        job_id = str(uuid.uuid4())
+        async with AsyncSessionLocal() as db:
+            existing = (await db.execute(select(DBExecutionJob).where(DBExecutionJob.session_id == session_id))).scalar_one_or_none()
+            if existing and existing.status in {"queued", "running"}:
+                job_id = existing.id
+            else:
+                if existing:
+                    await db.delete(existing)
+                db.add(DBExecutionJob(id=job_id, session_id=session_id, status="queued", attempts=0))
+            await db.commit()
+
+        lease_until = datetime.now(timezone.utc).timestamp() + max(60, session.max_runtime_seconds + 30)
+        async with AsyncSessionLocal() as db:
+            claimed = await db.execute(
+                update(DBExecutionJob)
+                .where(
+                    DBExecutionJob.id == job_id,
+                    DBExecutionJob.status == "queued",
+                    or_(DBExecutionJob.lease_until.is_(None), DBExecutionJob.lease_until < datetime.now(timezone.utc)),
+                )
+                .values(
+                    status="running",
+                    worker_id=self.worker_id,
+                    lease_until=datetime.fromtimestamp(lease_until, tz=timezone.utc),
+                    attempts=DBExecutionJob.attempts + 1,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            await db.commit()
+        if not claimed.rowcount:
+            return
 
         # Create executor instance
         executor = ExecutorSession(
@@ -148,6 +196,8 @@ class SessionManager:
             max_tool_calls=session.max_tool_calls,
             max_runtime_seconds=session.max_runtime_seconds,
             granted_scopes=session.granted_scopes,
+            granted_domains=session.granted_domains,
+            granted_folders=session.granted_folders,
         )
         self._active_executors[session_id] = executor
 
@@ -161,10 +211,10 @@ class SessionManager:
             await db.commit()
 
         # Launch runner in background
-        task = asyncio.create_task(self._run_executor_task(executor, session.plan, session.task))
+        task = asyncio.create_task(self._run_executor_task(executor, session.plan, session.task, job_id))
         self._background_tasks[session_id] = task
 
-    async def _run_executor_task(self, executor: ExecutorSession, plan: PlanModel, task: str):
+    async def _run_executor_task(self, executor: ExecutorSession, plan: PlanModel, task: str, job_id: str):
         try:
             success = await executor.run_plan(plan, task)
             status = "completed" if success else ("cancelled" if executor.is_cancelled else "failed")
@@ -178,6 +228,15 @@ class SessionManager:
                 updated_at=datetime.now(timezone.utc)
             )
             await db.execute(stmt)
+            await db.execute(
+                update(DBExecutionJob).where(DBExecutionJob.id == job_id).values(
+                    status=status,
+                    worker_id=None,
+                    lease_until=None,
+                    last_error=None if status == "completed" else status,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
             await db.commit()
 
         # Deliverables survive in durable artifact storage; temporary code,
@@ -230,6 +289,11 @@ class SessionManager:
         async with AsyncSessionLocal() as db:
             stmt = update(DBSession).where(DBSession.id == session_id).values(status="cancelled")
             await db.execute(stmt)
+            await db.execute(
+                update(DBExecutionJob).where(DBExecutionJob.session_id == session_id, DBExecutionJob.status.in_(["queued", "running"])).values(
+                    status="cancelled", worker_id=None, lease_until=None, updated_at=datetime.now(timezone.utc)
+                )
+            )
             await db.commit()
 
     async def update_permission(self, session_id: str, resource_type: str, value: str, granted: bool) -> SessionModel:
@@ -240,6 +304,7 @@ class SessionManager:
             "tool": session.enabled_tools,
             "folder": session.granted_folders,
             "scope": session.granted_scopes,
+            "domain": session.granted_domains,
         }
         target = collections[resource_type]
         if granted and value not in target:
@@ -251,6 +316,7 @@ class SessionManager:
                 "enabled_tools_json": json.dumps(session.enabled_tools),
                 "granted_folders_json": json.dumps(session.granted_folders),
                 "granted_scopes_json": json.dumps(session.granted_scopes),
+                "granted_domains_json": json.dumps(session.granted_domains),
                 "updated_at": datetime.now(timezone.utc),
             }
             await db.execute(update(DBSession).where(DBSession.id == session_id).values(**values))
@@ -364,6 +430,7 @@ class SessionManager:
                 ,enabled_tools=json.loads(db_sess.enabled_tools_json or "[]")
                 ,granted_folders=json.loads(db_sess.granted_folders_json or "[]")
                 ,granted_scopes=json.loads(db_sess.granted_scopes_json or "[]")
+                ,granted_domains=json.loads(db_sess.granted_domains_json or "[]")
                 ,max_steps=db_sess.max_steps or 30
                 ,max_tool_calls=db_sess.max_tool_calls or 50
                 ,max_runtime_seconds=db_sess.max_runtime_seconds or 300

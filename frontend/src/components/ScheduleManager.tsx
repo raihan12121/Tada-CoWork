@@ -20,6 +20,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
   const [title, setTitle] = useState('');
   const [taskTemplate, setTaskTemplate] = useState('');
   const [cron, setCron] = useState('0 9 * * 1'); // Every Monday at 9am
+  const [grantedDomains, setGrantedDomains] = useState('');
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -34,10 +35,16 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !taskTemplate.trim()) return;
-    const item = await api.createSchedule(title.trim(), taskTemplate.trim(), cron);
+    const item = await api.createSchedule(
+      title.trim(),
+      taskTemplate.trim(),
+      cron,
+      grantedDomains.split(',').map((domain) => domain.trim().toLowerCase()).filter(Boolean),
+    );
     setSchedules([...schedules, item]);
     setTitle('');
     setTaskTemplate('');
+    setGrantedDomains('');
     setShowCreateModal(false);
   };
 
@@ -185,6 +192,17 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
                   className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white resize-none"
                   required
                 />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Granted Web Domains (comma-separated)</label>
+                <input
+                  type="text"
+                  value={grantedDomains}
+                  onChange={(e) => setGrantedDomains(e.target.value)}
+                  placeholder="support.example.com, docs.example.com"
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white font-mono"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">Only web fetches for these domains will be allowed on scheduled runs.</p>
               </div>
               <div className="flex items-center justify-end space-x-2 pt-2">
                 <button

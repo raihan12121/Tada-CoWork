@@ -1,5 +1,8 @@
 import pytest
-from app.tools.web_fetch import WebFetchTool
+from pathlib import Path
+from bridge.agent import LocalBridgeAgent
+from app.tools.web_fetch import WebFetchTool, is_domain_granted
+from app.tools.bridge_files import BridgeListFilesTool
 
 @pytest.mark.asyncio
 async def test_web_fetch_ssrf_blocked():
@@ -40,3 +43,49 @@ async def test_web_fetch_reports_real_error_on_dead_url():
     # Ensure NO fake mock competitor text is returned
     assert "Competitor specifications: Standard pricing is $20" not in str(res.get("content", ""))
     assert "Competitor specifications: Standard pricing is $20" not in str(res.get("error", ""))
+
+
+def test_domain_grants_are_exact_or_subdomain_scoped():
+    assert is_domain_granted("docs.example.com", ["example.com"])
+    assert is_domain_granted("example.com", ["https://example.com"])
+    assert not is_domain_granted("example.com.evil.test", ["example.com"])
+    assert not is_domain_granted("other.test", ["example.com"])
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_rejects_ungranted_domain_before_network_call():
+    result = await WebFetchTool().execute(
+        session_id="domain-scope-test",
+        url="https://example.com/report",
+        allowed_domains=["trusted.example"],
+    )
+    assert result["success"] is False
+    assert "not granted" in result["error"]
+
+
+def test_local_bridge_scoped_move_and_traversal_rejection(tmp_path: Path):
+    source = tmp_path / "source.txt"
+    source.write_text("bridge data", encoding="utf-8")
+    agent = LocalBridgeAgent("test-token", [str(tmp_path)])
+    moved = agent.file_action({
+        "folder": str(tmp_path),
+        "relative_file": "source.txt",
+        "destination_file": "organized/source.txt",
+        "action": "move",
+    })
+    assert moved["action"] == "move"
+    assert (tmp_path / "organized" / "source.txt").read_text(encoding="utf-8") == "bridge data"
+    with pytest.raises(PermissionError):
+        agent.file_action({
+            "folder": str(tmp_path),
+            "relative_file": "../outside.txt",
+            "action": "read",
+        })
+
+
+@pytest.mark.asyncio
+async def test_bridge_tool_reports_offline_without_agent(monkeypatch):
+    monkeypatch.setattr("app.tools.bridge_files.settings.BRIDGE_AGENT_URL", "")
+    result = await BridgeListFilesTool().execute(session_id="bridge-offline", folder="D:/Downloads")
+    assert result["success"] is False
+    assert result["status"] == "bridge_offline"

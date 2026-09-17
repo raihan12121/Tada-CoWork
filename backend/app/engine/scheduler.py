@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy import select, update, delete
@@ -13,29 +14,49 @@ class SchedulerEngine:
         self._stop = asyncio.Event()
         self._last_retention_sweep = datetime.min.replace(tzinfo=timezone.utc)
 
-    async def create_schedule(self, title: str, task_template: str, cron_expression: str) -> ScheduleModel:
+    async def create_schedule(
+        self,
+        title: str,
+        task_template: str,
+        cron_expression: str,
+        workspace_id: str = "default",
+        enabled_tools: Optional[List[str]] = None,
+        granted_scopes: Optional[List[str]] = None,
+        granted_folders: Optional[List[str]] = None,
+        granted_domains: Optional[List[str]] = None,
+    ) -> ScheduleModel:
         sched_id = str(uuid.uuid4())
         next_run = self._next_run(cron_expression, datetime.now(timezone.utc))
         
         async with AsyncSessionLocal() as db:
             db_sched = DBSchedule(
                 id=sched_id,
+                workspace_id=workspace_id,
                 title=title,
                 task_template=task_template,
                 cron_expression=cron_expression,
                 is_active=True,
-                next_run_at=next_run
+                next_run_at=next_run,
+                enabled_tools_json=json.dumps(enabled_tools or []),
+                granted_scopes_json=json.dumps(granted_scopes or []),
+                granted_folders_json=json.dumps(granted_folders or []),
+                granted_domains_json=json.dumps(granted_domains or []),
             )
             db.add(db_sched)
             await db.commit()
 
         return ScheduleModel(
             id=sched_id,
+            workspace_id=workspace_id,
             title=title,
             task_template=task_template,
             cron_expression=cron_expression,
             is_active=True,
-            next_run_at=next_run
+            next_run_at=next_run,
+            enabled_tools=enabled_tools or [],
+            granted_scopes=granted_scopes or [],
+            granted_folders=granted_folders or [],
+            granted_domains=granted_domains or [],
         )
 
     async def list_schedules(self) -> List[ScheduleModel]:
@@ -46,13 +67,18 @@ class SchedulerEngine:
             return [
                 ScheduleModel(
                     id=i.id,
+                    workspace_id=i.workspace_id or "default",
                     title=i.title,
                     task_template=i.task_template,
                     cron_expression=i.cron_expression,
                     is_active=i.is_active,
                     next_run_at=i.next_run_at,
                     last_run_at=i.last_run_at,
-                    last_status=i.last_status
+                    last_status=i.last_status,
+                    enabled_tools=json.loads(i.enabled_tools_json or "[]"),
+                    granted_scopes=json.loads(i.granted_scopes_json or "[]"),
+                    granted_folders=json.loads(i.granted_folders_json or "[]"),
+                    granted_domains=json.loads(i.granted_domains_json or "[]"),
                 )
                 for i in items
             ]
@@ -75,7 +101,14 @@ class SchedulerEngine:
             due = result.scalars().all()
             for schedule in due:
                 try:
-                    session = await session_manager.create_session(SessionCreate(task=schedule.task_template))
+                    session = await session_manager.create_session(SessionCreate(
+                        task=schedule.task_template,
+                        workspace_id=schedule.workspace_id or "default",
+                        enabled_tools=json.loads(schedule.enabled_tools_json or "[]"),
+                        granted_scopes=json.loads(schedule.granted_scopes_json or "[]"),
+                        granted_folders=json.loads(schedule.granted_folders_json or "[]"),
+                        granted_domains=json.loads(schedule.granted_domains_json or "[]"),
+                    ))
                     await session_manager.start_execution(session.id)
                     schedule.last_status = "started"
                 except Exception as exc:

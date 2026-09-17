@@ -10,7 +10,9 @@ async def test_schedules_crud_and_trigger():
         create_resp = await client.post("/v1/schedules", json={
             "title": "Weekly Status Update",
             "task_template": "Draft executive status report for team",
-            "cron_expression": "0 9 * * 1"
+            "cron_expression": "0 9 * * 1",
+            "granted_domains": ["example.com"],
+            "granted_scopes": ["read:org"],
         })
         assert create_resp.status_code == 200
         sched = create_resp.json()
@@ -27,6 +29,8 @@ async def test_schedules_crud_and_trigger():
         assert trig_resp.status_code == 200
         session_data = trig_resp.json()
         assert "Weekly Status Update" in session_data["task"]
+        assert session_data["granted_domains"] == ["example.com"]
+        assert session_data["granted_scopes"] == ["read:org"]
 
         # 4. Trigger non-existent schedule
         trig_404 = await client.post("/v1/schedules/fake-id-9999/trigger")

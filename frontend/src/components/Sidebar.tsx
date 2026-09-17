@@ -8,6 +8,7 @@ import {
   ShieldCheck, 
   FolderOpen,
   Clock
+  ,Settings
 } from 'lucide-react';
 import type { Session } from '../types';
 
@@ -61,6 +62,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <PlusCircle className="w-4 h-4" />
           <span>New Session</span>
+        </button>
+        <button onClick={() => setCurrentTab('settings')} className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${currentTab === 'settings' ? 'bg-[#21262d] text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]/50'}`}>
+          <Settings className="w-4 h-4 text-cyan-400" /><span>AI Provider</span>
         </button>
       </div>
 

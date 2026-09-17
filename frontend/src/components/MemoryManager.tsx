@@ -114,6 +114,7 @@ export const MemoryManager: React.FC = () => {
 
           <button
             onClick={() => setShowAddModal(true)}
+            disabled={!isEnabled}
             className="flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -121,6 +122,12 @@ export const MemoryManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {!isEnabled && (
+        <div className="bg-amber-950/30 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-200 mb-6">
+          Enable long-term memory before adding new items. Existing items remain visible and deletable while memory is off.
+        </div>
+      )}
 
       {/* Tenant Isolation Banner */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-xs text-gray-300 flex items-center justify-between mb-6">

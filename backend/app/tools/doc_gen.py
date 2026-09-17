@@ -176,6 +176,14 @@ class CreateDocumentTool(BaseTool):
                 c.save()
 
             file_size = file_path.stat().st_size
+            try:
+                sandbox.ensure_disk_capacity(0)
+            except OSError as exc:
+                file_path.unlink(missing_ok=True)
+                if previous_snapshot:
+                    shutil.copy2(previous_snapshot, file_path)
+                    previous_snapshot.unlink(missing_ok=True)
+                return {"success": False, "error": str(exc)}
             rel_artifact_path = f"artifacts/{filename}"
             return {
                 "success": True,

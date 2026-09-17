@@ -8,6 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "dist_pc" / "Coagent"
 INSTALLER_DIR = BASE_DIR / "installer"
 OUTPUT_DIR = BASE_DIR / "dist_installer"
+APP_VERSION = "1.0.2"
 
 INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -115,7 +116,7 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
         '     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">',
         '  <Package Name="Coagent"',
         '           Manufacturer="Coagent"',
-        '           Version="1.0.2"',
+        f'           Version="{APP_VERSION}"',
         '           UpgradeCode="4A1B2C3D-E5F6-7890-ABCD-EF1234567890"',
         '           Scope="perMachine">',
         '    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />',
@@ -169,7 +170,7 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
 
 def build_msi():
     wxs_file = INSTALLER_DIR / "coagent.wxs"
-    msi_file = OUTPUT_DIR / "Coagent-1.0.0-x64.msi"
+    msi_file = OUTPUT_DIR / f"Coagent-{APP_VERSION}-x64.msi"
 
     generate_wix_xml(DIST_DIR, wxs_file)
 
@@ -191,4 +192,3 @@ def build_msi():
 
 if __name__ == "__main__":
     build_msi()
-

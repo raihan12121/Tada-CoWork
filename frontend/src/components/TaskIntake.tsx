@@ -11,12 +11,13 @@ import {
 } from 'lucide-react';
 
 interface TaskIntakeProps {
-  onSubmitTask: (task: string) => void;
+  onSubmitTask: (task: string, files: File[]) => void;
   isLoading: boolean;
 }
 
 export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading }) => {
   const [taskInput, setTaskInput] = useState('');
+  const [inputFiles, setInputFiles] = useState<File[]>([]);
 
   const templates = [
     {
@@ -49,7 +50,7 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskInput.trim() || isLoading) return;
-    onSubmitTask(taskInput.trim());
+    onSubmitTask(taskInput.trim(), inputFiles);
   };
 
   return (
@@ -85,6 +86,10 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading 
               <ShieldAlert className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-[11px]">Approval gates active for high-risk actions</span>
             </div>
+            <label className="cursor-pointer text-[11px] text-indigo-300 hover:text-indigo-200 mr-3">
+              Attach inputs{inputFiles.length ? ` (${inputFiles.length})` : ''}
+              <input type="file" multiple className="hidden" disabled={isLoading} onChange={(e) => setInputFiles(Array.from(e.target.files || []))} />
+            </label>
             <button
               type="submit"
               disabled={!taskInput.trim() || isLoading}

@@ -4,7 +4,7 @@ import time
 import json
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Callable, Awaitable
-from sqlalchemy import update
+from sqlalchemy import update, select
 from app.db.session import AsyncSessionLocal, DBSession, DBStep, DBToolCall, DBArtifact, DBActivityEvent
 from app.models.schemas import (
     SessionModel, PlanModel, StepBase, ToolCallRecord, ActivityFeedEvent, ArtifactModel
@@ -34,6 +34,8 @@ class ExecutorSession:
         max_tool_calls: int = 50,
         max_runtime_seconds: int = 300,
         granted_scopes: Optional[List[str]] = None,
+        granted_folders: Optional[List[str]] = None,
+        granted_domains: Optional[List[str]] = None,
     ):
         self.session_id = session_id
         self.workspace_id = workspace_id
@@ -48,10 +50,13 @@ class ExecutorSession:
         self._lock = asyncio.Lock()
         self.enabled_tools = set(enabled_tools or [])
         self.granted_scopes = set(granted_scopes or [])
+        self.granted_folders = list(granted_folders or [])
+        self.granted_domains = list(granted_domains or [])
         self.max_steps = max_steps
         self.max_tool_calls = max_tool_calls
         self.max_runtime_seconds = max_runtime_seconds
         self.steps_executed = 0
+        self.step_failure_counts: Dict[str, int] = {}
         self.started_at = time.monotonic()
 
     async def emit_event(
@@ -109,12 +114,38 @@ class ExecutorSession:
         target = {
             "tool": self.enabled_tools,
             "scope": self.granted_scopes,
+            "folder": self.granted_folders,
+            "domain": self.granted_domains,
         }.get(resource_type)
         if target is not None:
             if granted:
-                target.add(value)
+                if isinstance(target, set):
+                    target.add(value)
+                elif value not in target:
+                    target.append(value)
             else:
-                target.discard(value)
+                if isinstance(target, set):
+                    target.discard(value)
+                elif value in target:
+                    target.remove(value)
+
+    async def _record_step_failure(self, step: StepBase, plan: PlanModel, reason: str) -> None:
+        """Escalate repeated failures instead of silently retrying forever."""
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(DBStep).where(DBStep.id == step.id).values(failure_count=DBStep.failure_count + 1)
+            )
+            await db.commit()
+            count = (await db.execute(select(DBStep.failure_count).where(DBStep.id == step.id))).scalar_one_or_none() or 1
+        self.step_failure_counts[step.id] = count
+        if count >= 2:
+            await self.emit_event(
+                "replan_required",
+                f"Step '{step.description}' failed repeatedly; review is required before retrying.",
+                {"step_id": step.id, "failure_count": count, "reason": reason},
+                step_id=step.id,
+            )
+            await planner_engine.revise_plan(self.session_id, plan, f"Repeated failure: {reason}", step.id)
 
     async def run_plan(self, plan: PlanModel, task: str) -> bool:
         """
@@ -174,6 +205,34 @@ class ExecutorSession:
                         else:
                             overall_success = False
 
+                # Parallel branches must not silently overwrite the same
+                # deliverable. Surface duplicate output targets to the user
+                # instead of choosing a winner implicitly (rules.md §8.3).
+                tier_step_ids = {step.id for step in tier}
+                tier_observations = [
+                    observation for observation in prior_observations
+                    if observation.get("step") in tier_step_ids
+                ]
+                targets: dict[str, list[dict[str, Any]]] = {}
+                for observation in tier_observations:
+                    result_data = observation.get("result") or {}
+                    for key in ("path", "filename", "relative_path", "file_id"):
+                        target = result_data.get(key)
+                        if target:
+                            targets.setdefault(f"{key}:{target}", []).append(observation)
+                conflicts = [
+                    {"target": target, "steps": [item.get("step") for item in observations]}
+                    for target, observations in targets.items()
+                    if len(observations) > 1
+                ]
+                if conflicts:
+                    overall_success = False
+                    await self.emit_event(
+                        "merge_conflict",
+                        "Parallel workstreams produced the same output target; user review is required.",
+                        {"tier": tier_idx, "conflicts": conflicts},
+                    )
+
                 # Merge step (architecture.md §8)
                 await self.emit_event(
                     "narration",
@@ -214,6 +273,7 @@ class ExecutorSession:
             step.result_summary = f"Session step limit ({self.max_steps}) reached."
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
         if step.status in ("completed", "skipped"):
@@ -246,11 +306,48 @@ class ExecutorSession:
         tool_name = reasoning.get("tool", step.tool)
         tool_params = reasoning.get("params", {})
 
+        if tool_name in {"bridge_list_files", "bridge_read_file", "bridge_move_file"}:
+            tool_params.setdefault("folder", self.granted_folders[0] if self.granted_folders else "")
+        if tool_name == "web_fetch":
+            tool_params["allowed_domains"] = list(self.granted_domains)
+
+        if tool_name == "create_document":
+            # Carry observed source material into the deliverable explicitly.
+            # This keeps reports data-driven without treating web/file content
+            # as executable instructions, and preserves source URLs for review.
+            source_blocks: list[str] = []
+            tabular_sources: list[dict[str, Any]] = []
+            for observation in prior_observations:
+                result_data = observation.get("result") or {}
+                if result_data.get("content"):
+                    source_blocks.append(str(result_data["content"])[:6000])
+                if result_data.get("sanitized_view"):
+                    source_blocks.append(str(result_data["sanitized_view"])[:6000])
+                if isinstance(result_data.get("results"), list):
+                    for item in result_data["results"][:20]:
+                        if isinstance(item, dict):
+                            tabular_sources.append(item)
+            if source_blocks or tabular_sources:
+                source_text = "\n\n".join(source_blocks)
+                citation_text = "\n".join(
+                    f"- {item.get('title', 'Source')}: {item.get('url', 'URL unavailable')}"
+                    for item in tabular_sources
+                )
+                tool_params["content"] = (
+                    tool_params.get("content", "")
+                    + "\n\n## Observed source material (untrusted data)\n"
+                    + source_text[:12000]
+                    + (f"\n\n## Sources\n{citation_text}" if citation_text else "")
+                )
+                if tabular_sources:
+                    tool_params["data"] = tabular_sources
+
         if tool_name not in self.enabled_tools:
             step.status = "failed"
             step.result_summary = f"Tool '{tool_name}' is not enabled for this session."
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
         if not org_policy_manager.get(self.workspace_id).allows(tool_name):
@@ -258,14 +355,16 @@ class ExecutorSession:
             step.result_summary = f"Organization policy blocked tool '{tool_name}'."
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
-        connector_allowed, connector_reason = await connector_is_allowed(tool_name)
+        connector_allowed, connector_reason = await connector_is_allowed(tool_name, tool_params)
         if not connector_allowed:
             step.status = "failed"
             step.result_summary = connector_reason
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
         tool_instance = tool_registry.get_tool(tool_name)
@@ -276,6 +375,7 @@ class ExecutorSession:
             step.result_summary = f"Missing connector scope(s): {', '.join(missing)}"
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
         if self.tool_calls_count >= self.max_tool_calls:
@@ -283,6 +383,7 @@ class ExecutorSession:
             step.result_summary = f"Session tool-call limit ({self.max_tool_calls}) reached."
             await self._update_step_db(step)
             await self.emit_event("error", step.result_summary, step_id=step.id)
+            await self._record_step_failure(step, plan, step.result_summary)
             return False
 
         # Enforce Risk Tier & Approval Gate (rules.md §2)
@@ -320,8 +421,8 @@ class ExecutorSession:
                 action_type=tool_name,
                 description=step.description,
                 consequence=consequence,
-                target=str(tool_params.get("path") or tool_params.get("recipient") or tool_name),
-                diff=json.dumps(tool_params, ensure_ascii=False, default=str),
+                target=self._approval_target(tool_name, tool_params),
+                diff=json.dumps(tool_params, ensure_ascii=False, indent=2, default=str),
                 risk_level=risk_level,
                 step_id=step.id,
                 takeover_mode=is_takeover,
@@ -386,7 +487,12 @@ class ExecutorSession:
             session_id=self.session_id,
             event_type="tool_call_end",
             actor="executor",
-            details={"tool": tool_name, "success": result.get("success", False), "time_ms": exec_time_ms},
+            details={
+                "tool": tool_name,
+                "success": result.get("success", False),
+                "time_ms": exec_time_ms,
+                "output": result,
+            },
             step_id=step.id
         )
 
@@ -413,6 +519,8 @@ class ExecutorSession:
         step.status = "completed" if result.get("success") else "failed"
         step.result_summary = result.get("summary") or result.get("message") or ("Completed." if result.get("success") else result.get("error"))
         await self._update_step_db(step)
+        if not result.get("success"):
+            await self._record_step_failure(step, plan, step.result_summary or "Tool returned failure")
 
         async with self._lock:
             self.working_memory.add_turn(
@@ -429,6 +537,23 @@ class ExecutorSession:
             step_id=step.id
         )
         return result.get("success", False)
+
+    @staticmethod
+    def _approval_target(tool_name: str, params: Dict[str, Any]) -> str:
+        """Build the concrete target shown before an irreversible action."""
+        if params.get("recipient"):
+            return f"recipient={params['recipient']}"
+        if params.get("channel"):
+            return f"channel={params['channel']}"
+        if params.get("amount") is not None:
+            return f"amount={params['amount']}"
+        if params.get("source") or params.get("destination"):
+            return f"source={params.get('source', '')}; destination={params.get('destination', '')}"
+        if params.get("path"):
+            return f"path={params['path']}"
+        if params.get("url"):
+            return f"url={params['url']}"
+        return tool_name
 
     async def _set_session_status(self, status: str):
         async with AsyncSessionLocal() as db:

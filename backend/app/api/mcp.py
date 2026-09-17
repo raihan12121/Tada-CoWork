@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import update
 
@@ -22,6 +22,7 @@ from app.core.org_policy import org_policy_manager
 from app.db.session import AsyncSessionLocal, DBToolCall, DBSession
 from app.config import settings
 from app.core.connector_policy import connector_is_allowed
+from app.core.identity import Principal, require_workspace_access
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -39,7 +40,7 @@ async def list_mcp_tools():
 
 
 @router.post("/rpc")
-async def mcp_rpc(request: JsonRpcRequest):
+async def mcp_rpc(http_request: Request, request: JsonRpcRequest):
     if request.jsonrpc != "2.0":
         raise HTTPException(status_code=400, detail="Only JSON-RPC 2.0 is supported")
     if request.method == "tools/list":
@@ -55,11 +56,16 @@ async def mcp_rpc(request: JsonRpcRequest):
     session = await session_manager.get_session(session_id)
     if not session:
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32004, "message": "Session not found"}}
+    principal = getattr(http_request.state, "principal", Principal("anonymous", "default", frozenset({"*"}), frozenset({"local_dev"})))
+    try:
+        require_workspace_access(principal, session.workspace_id)
+    except PermissionError:
+        return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32003, "message": "Workspace access denied"}}
     if tool_name not in session.enabled_tools:
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32003, "message": "Tool is not enabled for this session"}}
     if not org_policy_manager.get(session.workspace_id).allows(tool_name):
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32006, "message": "Organization policy blocked this tool"}}
-    connector_allowed, connector_reason = await connector_is_allowed(tool_name)
+    connector_allowed, connector_reason = await connector_is_allowed(tool_name, arguments)
     if not connector_allowed:
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32007, "message": connector_reason}}
     tool = tool_registry.get_tool(tool_name)
@@ -75,6 +81,8 @@ async def mcp_rpc(request: JsonRpcRequest):
     if not required_scopes.issubset(granted_scopes):
         missing_scopes = sorted(required_scopes - granted_scopes)
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32004, "message": f"Missing granted scope(s): {', '.join(missing_scopes)}"}}
+    if tool_name == "web_fetch":
+        arguments["allowed_domains"] = list(session.granted_domains)
     risk, requires_approval, consequence = safety_engine.classify_tool_risk(tool_name, arguments)
     if requires_approval:
         return {"jsonrpc": "2.0", "id": request.id, "error": {"code": -32005, "message": f"Approval required before calling {tool_name}: {consequence}"}}

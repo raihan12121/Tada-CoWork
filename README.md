@@ -91,10 +91,27 @@ GEMINI_API_KEY=your_key_here
 BRIDGE_SECRET=generate-a-random-secret
 COAGENT_API_AUTH_TOKEN=generate-a-random-api-token
 COAGENT_ADMIN_TOKEN=generate-a-random-admin-token
+COAGENT_IDENTITY_SECRET=shared-verification-secret-for-signed-principal-tokens
+COAGENT_OIDC_ISSUER=https://id.example.com/
+COAGENT_OIDC_AUDIENCE=coagent-api
+COAGENT_OIDC_JWKS_URL=https://id.example.com/.well-known/jwks.json
+COAGENT_OIDC_WORKSPACE_CLAIM=workspace_ids
+COAGENT_MARKETPLACE_SIGNING_SECRET=shared-secret-for-connector-manifest-signatures
+COAGENT_DEPLOYMENT_REGION=eu-west
 SANDBOX_BACKEND=docker
 SANDBOX_NETWORK=none
+COAGENT_MANAGED_SANDBOX_URL=https://sandbox.example.com
+COAGENT_MANAGED_SANDBOX_TOKEN=provider-issued-worker-token
 COAGENT_DELIVERY_MODE=preview
 ```
+
+When identity verification is enabled, configure `VITE_IDENTITY_TOKEN` with a signed principal token; its claims determine the user's organization, workspaces, and admin role. Production can use the local HMAC contract or configure the OIDC issuer, audience, and JWKS URL for RS256 verification.
+
+### Configure the AI provider
+
+Open the **AI Provider** item in the desktop sidebar. Choose OpenAI, Anthropic, or Gemini and enter the provider key, or choose Ollama/LM Studio for a local OpenAI-compatible endpoint. Use **Test connection** before starting a task. Provider credentials are held in the running desktop process and are not written to the database; after restarting the app, configure the provider again. `offline_heuristic` is an explicitly labeled no-AI preview mode.
+
+When marketplace review is enabled, approved connector manifests must carry an HMAC-SHA256 signature over their canonical metadata and, in production, pass the staged package scan. The built-in scan verifies the declared digest and rejects unsafe archive paths, links, and executable binaries; deployment registries should add malware and dependency scanning before distribution.
 
 ### Optional local bridge
 
@@ -104,7 +121,16 @@ Run the authenticated companion transport with explicitly granted folders:
 python bridge/agent.py --serve --token "<same BRIDGE_SECRET>" --folder "D:/Downloads"
 ```
 
+Install the bridge-only browser dependency before enabling browser control:
+
+```bash
+pip install -r bridge/requirements.txt
+playwright install chromium
+```
+
 Set `COAGENT_BRIDGE_AGENT_URL=http://127.0.0.1:8765` in the orchestrator environment. Browser control requires an installed Playwright runtime in the bridge environment and always returns takeover-required for login, payment, or CAPTCHA work.
+
+For non-local deployments, start the bridge with `--certfile` and `--keyfile` and configure an `https://` `COAGENT_BRIDGE_AGENT_URL`; the bridge refuses a partial TLS configuration.
 
 ---
 

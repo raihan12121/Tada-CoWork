@@ -60,3 +60,12 @@ async def test_local_sandbox_caps_code_payload():
         assert "limit" in result["stderr"].lower()
     finally:
         sandbox.destroy()
+
+
+def test_sandbox_path_boundary_does_not_use_string_prefixes():
+    sandbox = SandboxSession("prefix-boundary-test")
+    try:
+        with pytest.raises(PermissionError):
+            sandbox.resolve_path("../prefix-boundary-test-sibling/secret.txt")
+    finally:
+        sandbox.destroy()

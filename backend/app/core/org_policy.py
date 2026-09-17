@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import json
 from typing import Dict, Set, Any
+from app.config import settings
 
 
 @dataclass
@@ -50,6 +51,17 @@ class OrganizationPolicyManager:
             data_region=row.data_region,
             kill_switch=row.kill_switch,
         )
+
+    def assert_data_region_available(self, organization_id: str) -> None:
+        """Fail closed when a workspace is assigned to another deployment region."""
+        policy = self.get(organization_id)
+        requested = (policy.data_region or "local").strip().lower()
+        deployed = (settings.DEPLOYMENT_REGION or "local").strip().lower()
+        if requested not in {"local", deployed}:
+            raise PermissionError(
+                f"Workspace '{organization_id}' requires data region '{requested}', "
+                f"but this deployment serves '{deployed}'."
+            )
 
 
 org_policy_manager = OrganizationPolicyManager()

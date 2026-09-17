@@ -6,7 +6,9 @@ import webview
 
 block_cipher = None
 
-BASE_DIR = Path(r"D:\App Development\Omayk Cowork")
+# Resolve the repository from this spec file so the build works from any
+# checkout location and does not embed the developer's absolute path.
+BASE_DIR = Path(SPECPATH).resolve().parent
 BACKEND_DIR = BASE_DIR / "backend"
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 WEBVIEW_LIB_DIR = Path(webview.__file__).parent / "lib"
@@ -100,8 +102,40 @@ exe = EXE(
     entitlements_file=None,
 )
 
+worker_analysis = Analysis(
+    [str(BASE_DIR / "desktop" / "sandbox_worker.py")],
+    pathex=[str(BASE_DIR)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+worker_pyz = PYZ(worker_analysis.pure, worker_analysis.zipped_data, cipher=block_cipher)
+
+worker_exe = EXE(
+    worker_pyz,
+    worker_analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="CoagentSandboxWorker",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+)
+
 coll = COLLECT(
     exe,
+    worker_exe,
     a.binaries,
     a.zipfiles,
     a.datas,

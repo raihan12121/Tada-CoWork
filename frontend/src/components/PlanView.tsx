@@ -7,6 +7,8 @@ import {
   ShieldAlert, 
   Trash2, 
   Plus, 
+  ArrowUp,
+  ArrowDown,
   Wrench, 
   ShieldCheck,
   Sparkles
@@ -20,6 +22,7 @@ interface PlanViewProps {
   onStartExecution: () => void;
   onDeleteStep?: (stepId: string) => void;
   onAddStep?: (desc: string, tool: string, risk: RiskLevel) => void;
+  onReorderSteps?: (stepIds: string[]) => void;
 }
 
 export const PlanView: React.FC<PlanViewProps> = ({
@@ -27,7 +30,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   sessionStatus,
   onStartExecution,
   onDeleteStep,
-  onAddStep
+  onAddStep,
+  onReorderSteps
 }) => {
   const [newDesc, setNewDesc] = useState('');
   const [newTool, setNewTool] = useState('execute_code');
@@ -84,7 +88,15 @@ export const PlanView: React.FC<PlanViewProps> = ({
     setShowAddForm(false);
   };
 
-  const canEdit = sessionStatus === 'created';
+  const canEdit = sessionStatus === 'created' || sessionStatus === 'paused';
+  const moveStep = (index: number, direction: -1 | 1) => {
+    if (!onReorderSteps) return;
+    const next = [...plan.steps];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    onReorderSteps(next.map((step) => step.id));
+  };
 
   return (
     <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 shadow-lg mb-6">
@@ -169,14 +181,16 @@ export const PlanView: React.FC<PlanViewProps> = ({
               </div>
             </div>
 
-            {canEdit && onDeleteStep && (
-              <button
-                onClick={() => onDeleteStep(step.id)}
-                className="text-gray-500 hover:text-rose-400 p-1 rounded transition"
-                title="Remove step"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+            {canEdit && (onDeleteStep || onReorderSteps) && (
+              <div className="flex items-center gap-0.5">
+                {onReorderSteps && (
+                  <>
+                    <button onClick={() => moveStep(plan.steps.indexOf(step), -1)} disabled={plan.steps.indexOf(step) === 0} className="text-gray-500 hover:text-indigo-300 disabled:opacity-20 p-1 rounded transition" title="Move step up"><ArrowUp className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => moveStep(plan.steps.indexOf(step), 1)} disabled={plan.steps.indexOf(step) === plan.steps.length - 1} className="text-gray-500 hover:text-indigo-300 disabled:opacity-20 p-1 rounded transition" title="Move step down"><ArrowDown className="w-3.5 h-3.5" /></button>
+                  </>
+                )}
+                {onDeleteStep && <button onClick={() => onDeleteStep(step.id)} className="text-gray-500 hover:text-rose-400 p-1 rounded transition" title="Remove step"><Trash2 className="w-3.5 h-3.5" /></button>}
+              </div>
             )}
           </div>
         ))}
@@ -214,6 +228,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   <option value="write_file">write_file</option>
                   <option value="create_file">create_file</option>
                   <option value="move_file">move_file</option>
+                  <option value="bridge_list_files">bridge_list_files</option>
+                  <option value="bridge_read_file">bridge_read_file</option>
+                  <option value="bridge_move_file">bridge_move_file</option>
                   <option value="read_file">read_file</option>
                   <option value="web_search">web_search</option>
                   <option value="web_fetch">web_fetch</option>

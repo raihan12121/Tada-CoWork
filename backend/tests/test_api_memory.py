@@ -6,6 +6,8 @@ from app.main import app
 async def test_memory_crud_workflow():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        toggle_res = await client.post("/v1/memory/toggle", json={"workspace_id": "test_ws", "enabled": True})
+        assert toggle_res.status_code == 200
         # Create memory item
         create_res = await client.post("/v1/memory", json={
             "type": "fact",

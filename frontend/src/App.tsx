@@ -9,6 +9,7 @@ import { MemoryManager } from './components/MemoryManager';
 import { ScheduleManager } from './components/ScheduleManager';
 import { BridgeManager } from './components/BridgeManager';
 import { AuditViewer } from './components/AuditViewer';
+import { ProviderSettings } from './components/ProviderSettings';
 import type { Session, ActivityEvent } from './types';
 import { api } from './services/api';
 
@@ -92,10 +93,11 @@ export const App: React.FC = () => {
     };
   }, [activeSessionId]);
 
-  const handleCreateSession = async (task: string) => {
+  const handleCreateSession = async (task: string, files: File[] = []) => {
     setIsLoading(true);
     try {
       const newSession = await api.createSession(task);
+      for (const file of files) await api.uploadSessionInput(newSession.id, file);
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setEvents([]);
@@ -174,6 +176,12 @@ export const App: React.FC = () => {
     setActiveSession({ ...activeSession, plan });
   };
 
+  const handleReorderSteps = async (stepIds: string[]) => {
+    if (!activeSession) return;
+    const plan = await api.editPlan(activeSession.id, { action: 'reorder', ordered_step_ids: stepIds });
+    setActiveSession({ ...activeSession, plan });
+  };
+
   return (
     <div className="flex h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased overflow-hidden">
       {/* Sidebar Navigation */}
@@ -197,6 +205,7 @@ export const App: React.FC = () => {
         )}
         {currentTab === 'bridge' && <BridgeManager activeSessionId={activeSession?.id} />}
         {currentTab === 'audit' && <AuditViewer />}
+        {currentTab === 'settings' && <ProviderSettings />}
 
         {currentTab === 'workspace' && (
           <div className="p-6 max-w-6xl mx-auto w-full">
@@ -234,6 +243,7 @@ export const App: React.FC = () => {
                       onStartExecution={handleStartExecution}
                       onDeleteStep={handleDeleteStep}
                       onAddStep={handleAddStep}
+                      onReorderSteps={handleReorderSteps}
                     />
                   )}
 

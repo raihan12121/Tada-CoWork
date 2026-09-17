@@ -105,6 +105,7 @@ class MemoryUpdate(BaseModel):
 
 class ScheduleModel(BaseModel):
     id: str
+    workspace_id: str = "default"
     title: str
     task_template: str
     cron_expression: str
@@ -112,6 +113,10 @@ class ScheduleModel(BaseModel):
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
     last_status: Optional[str] = None
+    enabled_tools: List[str] = Field(default_factory=list)
+    granted_scopes: List[str] = Field(default_factory=list)
+    granted_folders: List[str] = Field(default_factory=list)
+    granted_domains: List[str] = Field(default_factory=list)
 
 class ConnectorModel(BaseModel):
     id: str
@@ -128,6 +133,7 @@ class SessionCreate(BaseModel):
     granted_folders: List[str] = Field(default_factory=list)
     enabled_tools: List[str] = Field(default_factory=list)
     granted_scopes: List[str] = Field(default_factory=list)
+    granted_domains: List[str] = Field(default_factory=list)
 
     @field_validator("task")
     @classmethod
@@ -151,6 +157,7 @@ class SessionModel(BaseModel):
     enabled_tools: List[str] = Field(default_factory=list)
     granted_folders: List[str] = Field(default_factory=list)
     granted_scopes: List[str] = Field(default_factory=list)
+    granted_domains: List[str] = Field(default_factory=list)
     max_steps: int = 30
     max_tool_calls: int = 50
     max_runtime_seconds: int = 300
@@ -174,5 +181,5 @@ class PlanEditRequest(BaseModel):
 
 class SessionPermissionUpdate(BaseModel):
     action: Literal["grant", "revoke"]
-    resource_type: Literal["tool", "folder", "scope"]
+    resource_type: Literal["tool", "folder", "scope", "domain"]
     value: str = Field(..., min_length=1)

@@ -13,6 +13,8 @@ import { api } from '../services/api';
 export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSessionId }) => {
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [newFolder, setNewFolder] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [domains, setDomains] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const loadStatus = async () => {
@@ -29,8 +31,30 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
     api.getBridgeStatus(activeSessionId).then((data) => {
       if (!ignore) setStatus(data);
     }).catch(console.error);
+    if (activeSessionId) {
+      api.getSession(activeSessionId).then((session) => {
+        if (!ignore) setDomains(session.granted_domains || []);
+      }).catch(console.error);
+    } else {
+      setDomains([]);
+    }
     return () => { ignore = true; };
   }, [activeSessionId]);
+
+  const handleGrantDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSessionId || !newDomain.trim()) return;
+    const value = newDomain.trim().toLowerCase();
+    const session = await api.updateSessionPermission(activeSessionId, 'grant', 'domain', value);
+    setDomains(session.granted_domains || []);
+    setNewDomain('');
+  };
+
+  const handleRevokeDomain = async (domain: string) => {
+    if (!activeSessionId) return;
+    const session = await api.updateSessionPermission(activeSessionId, 'revoke', 'domain', domain);
+    setDomains(session.granted_domains || []);
+  };
 
   const handleGrant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +62,10 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
     setIsLoading(true);
     try {
       await api.grantFolder(newFolder.trim(), activeSessionId);
-      if (activeSessionId) await api.updateSessionPermission(activeSessionId, 'grant', 'folder', newFolder.trim());
+      if (activeSessionId) {
+        await api.updateSessionPermission(activeSessionId, 'grant', 'folder', newFolder.trim());
+        await api.updateSessionPermission(activeSessionId, 'grant', 'scope', 'bridge:files');
+      }
       setNewFolder('');
       await loadStatus();
     } finally {
@@ -53,7 +80,9 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
   };
 
   const handleBrowserToggle = async () => {
-    await api.toggleBrowser(!status?.allow_browser_control, activeSessionId);
+    const enabled = !status?.allow_browser_control;
+    await api.toggleBrowser(enabled, activeSessionId);
+    if (activeSessionId) await api.updateSessionPermission(activeSessionId, enabled ? 'grant' : 'revoke', 'scope', 'browser:control');
     await loadStatus();
   };
 
@@ -142,6 +171,33 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
             </div>
           ))
         )}
+      </div>
+
+      {/* Scoped Browser Control */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 mb-6">
+        <div className="flex items-center space-x-3 mb-3">
+          <Globe className="w-5 h-5 text-indigo-400" />
+          <div>
+            <h4 className="text-xs font-semibold text-white">Web Domain Grants</h4>
+            <p className="text-[11px] text-gray-400">Web fetches for the active session are limited to these domains.</p>
+          </div>
+        </div>
+        <form onSubmit={handleGrantDomain} className="flex items-center space-x-2 mb-3">
+          <input
+            type="text"
+            value={newDomain}
+            onChange={(e) => setNewDomain(e.target.value)}
+            placeholder="example.com"
+            disabled={!activeSessionId}
+            className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg p-2 text-xs text-white placeholder-gray-500 font-mono disabled:opacity-40"
+          />
+          <button type="submit" disabled={!activeSessionId || !newDomain.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-2 rounded-lg">Grant Domain</button>
+        </form>
+        <div className="flex flex-wrap gap-2">
+          {domains.length === 0 ? <span className="text-xs text-gray-500 italic">No domains granted for this session.</span> : domains.map((domain) => (
+            <button key={domain} onClick={() => handleRevokeDomain(domain)} className="text-xs font-mono text-emerald-300 border border-emerald-500/30 rounded px-2 py-1 hover:bg-rose-950/30 hover:text-rose-300" title="Revoke domain grant">{domain} ×</button>
+          ))}
+        </div>
       </div>
 
       {/* Scoped Browser Control */}

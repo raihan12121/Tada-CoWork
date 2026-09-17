@@ -19,6 +19,9 @@ class PlannerEngine:
         task: str,
         memory_context: str = ""
     ) -> PlanModel:
+        # Provider settings can be changed from the desktop Settings panel
+        # while the server is running.
+        self.llm = get_llm_client()
         plan_data = await self.llm.generate_plan(task, memory_context)
         plan_id = str(uuid.uuid4())
         explanation = plan_data.get("explanation", "Initial plan generated.")
@@ -73,6 +76,7 @@ class PlannerEngine:
                     risk_level=st.risk_level,
                     dependencies_json=json.dumps(st.dependencies),
                     status=st.status
+                    ,failure_count=0
                 )
                 db.add(db_step)
             await db.commit()

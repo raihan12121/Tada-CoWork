@@ -7,6 +7,7 @@ from app.tools.web_search import WebSearchTool
 from app.tools.web_fetch import WebFetchTool
 from app.tools.communication import SendEmailTool, SendSlackMessageTool
 from app.tools.browser import BrowserAutomationTool
+from app.tools.bridge_files import BridgeListFilesTool, BridgeReadFileTool, BridgeMoveFileTool
 from app.connectors.google_drive import GoogleDriveConnector
 from app.connectors.github import GitHubConnector
 from app.connectors.slack import SlackConnector, WebhookConnector
@@ -32,6 +33,9 @@ class ToolRegistry:
             SendEmailTool(),
             SendSlackMessageTool(),
             BrowserAutomationTool(),
+            BridgeListFilesTool(),
+            BridgeReadFileTool(),
+            BridgeMoveFileTool(),
             GoogleDriveConnector(),
             GitHubConnector(),
             SlackConnector(),

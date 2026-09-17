@@ -47,6 +47,18 @@ def is_ssrf_safe_url(url: str) -> Tuple[bool, Optional[str]]:
 
     return True, None
 
+
+def is_domain_granted(hostname: str, allowed_domains: list[str]) -> bool:
+    host = hostname.lower().rstrip(".")
+    for raw_domain in allowed_domains:
+        domain = str(raw_domain).strip().lower().rstrip(".")
+        if domain.startswith("http://") or domain.startswith("https://"):
+            domain = urlparse(domain).hostname or ""
+        domain = domain.lstrip("*.").rstrip(".")
+        if domain and (host == domain or host.endswith("." + domain)):
+            return True
+    return False
+
 class WebFetchTool(BaseTool):
     name = "web_fetch"
     description = "Fetches text from a web page and formats it safely as data."
@@ -66,6 +78,11 @@ class WebFetchTool(BaseTool):
         if not url:
             return {"success": False, "error": "URL cannot be empty."}
 
+        allowed_domains = kwargs.get("allowed_domains")
+        hostname = urlparse(url).hostname or ""
+        if allowed_domains is not None and not is_domain_granted(hostname, list(allowed_domains)):
+            return {"success": False, "error": f"Domain '{hostname}' is not granted for this session."}
+
         is_safe, security_err = is_ssrf_safe_url(url)
         if not is_safe:
             return {"success": False, "error": security_err}
@@ -75,6 +92,9 @@ class WebFetchTool(BaseTool):
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Coagent/1.0"}
                 resp = await client.get(url, headers=headers)
+                final_host = resp.url.hostname or ""
+                if allowed_domains is not None and not is_domain_granted(final_host, list(allowed_domains)):
+                    return {"success": False, "error": f"Redirected domain '{final_host}' is not granted for this session."}
                 if resp.status_code != 200:
                     return {"success": False, "error": f"HTTP {resp.status_code}: Failed to fetch '{url}'."}
                 html = resp.text

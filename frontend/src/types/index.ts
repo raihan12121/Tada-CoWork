@@ -86,6 +86,7 @@ export interface Session {
   enabled_tools: string[];
   granted_folders: string[];
   granted_scopes: string[];
+  granted_domains: string[];
   max_steps: number;
   max_tool_calls: number;
   max_runtime_seconds: number;
@@ -111,6 +112,10 @@ export interface Schedule {
   next_run_at?: string;
   last_run_at?: string;
   last_status?: string;
+  enabled_tools: string[];
+  granted_scopes: string[];
+  granted_folders: string[];
+  granted_domains: string[];
 }
 
 export interface BridgeStatus {

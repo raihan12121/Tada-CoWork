@@ -5,6 +5,17 @@ from typing import Dict, Any, List, Optional
 import httpx
 from app.config import settings
 from app.models.schemas import StepBase, RiskLevel
+from app.core.secret_store import save_secret, load_secret, delete_secret
+
+
+def annotate_memory_context(plan: Dict[str, Any], memory_context: str) -> Dict[str, Any]:
+    """Make recalled defaults visible in every provider's plan output."""
+    if memory_context:
+        plan["explanation"] = (
+            f"{plan.get('explanation', 'Plan generated.')} "
+            "Using recalled workspace context as a transparent default; the current task instructions take precedence."
+        )
+    return plan
 
 class BaseLLMProvider:
     async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
@@ -29,7 +40,7 @@ class AnthropicLLMProvider(BaseLLMProvider):
             "You are the Coagent Planner. Deconstruct the user task into a structured plan graph. "
             "Return JSON with keys: explanation, steps: [{description, tool, risk_level, dependencies}]. "
             "Tools available: execute_code, create_file, write_file, edit_file, delete_file, read_file, "
-            "list_files, create_document, web_search, web_fetch, browser_automation, google_drive, gmail, outlook, github, slack, webhook. "
+            "list_files, bridge_list_files, bridge_read_file, bridge_move_file, create_document, web_search, web_fetch, browser_automation, google_drive, gmail, outlook, github, slack, webhook. "
             "Risk levels: low (read-only/search), medium (file create/write/code exec), high (delete/external send)."
         )
         prompt = f"Task: {task}\nMemory Context:\n{memory_context}"
@@ -56,9 +67,9 @@ class AnthropicLLMProvider(BaseLLMProvider):
                     end = text.rfind("}") + 1
                     if start != -1 and end != -1:
                         return json.loads(text[start:end])
-        except Exception:
-            pass
-        return OfflineHeuristicProvider().generate_plan_sync(task, memory_context)
+        except Exception as exc:
+            raise RuntimeError(f"Anthropic provider request failed: {exc}") from exc
+        raise RuntimeError("Anthropic provider returned no usable plan")
 
     async def reason_step(
         self,
@@ -91,15 +102,17 @@ class OpenAILLMProvider(BaseLLMProvider):
                 )
                 response.raise_for_status()
                 return json.loads(response.json()["choices"][0]["message"]["content"])
-        except Exception:
-            return {}
+        except Exception as exc:
+            raise RuntimeError(f"OpenAI provider request failed: {exc}") from exc
 
     async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
         data = await self._json_call(
             "Return only JSON with explanation and steps. Each step has description, tool, risk_level, dependencies.",
             f"Task: {task}\nMemory context: {memory_context}",
         )
-        return data or OfflineHeuristicProvider().generate_plan_sync(task, memory_context)
+        if not data:
+            raise RuntimeError("OpenAI provider returned no usable plan")
+        return data
 
     async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
         data = await self._json_call(
@@ -122,6 +135,35 @@ class GeminiLLMProvider(OpenAILLMProvider):
                 text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
                 start, end = text.find("{"), text.rfind("}") + 1
                 return json.loads(text[start:end]) if start >= 0 and end > start else {}
+        except Exception as exc:
+            raise RuntimeError(f"Gemini provider request failed: {exc}") from exc
+
+
+class OpenAICompatibleLLMProvider(OpenAILLMProvider):
+    """Provider for Ollama, LM Studio, and other OpenAI-compatible servers."""
+    def __init__(self, endpoint: str, model: str, api_key: str = ""):
+        self.api_key = api_key
+        self.endpoint = endpoint.rstrip("/") + "/chat/completions"
+        self.model = model
+
+    async def _json_call(self, system: str, prompt: str) -> Dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                headers = {"Content-Type": "application/json"}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+                response = await client.post(
+                    self.endpoint,
+                    headers=headers,
+                    json={
+                        "model": self.model,
+                        "temperature": 0,
+                        "response_format": {"type": "json_object"},
+                        "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+                    },
+                )
+                response.raise_for_status()
+                return json.loads(response.json()["choices"][0]["message"]["content"])
         except Exception:
             return {}
 
@@ -135,12 +177,14 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         
         # UC-1: Organize files
         if "organize" in task_lower or "downloads" in task_lower or "sort" in task_lower:
+            inventory_tool = "bridge_list_files" if settings.BRIDGE_AGENT_URL else "list_files"
+            move_tool = "bridge_move_file" if settings.BRIDGE_AGENT_URL else "move_file"
             return {
                 "explanation": "I have created a structured plan to inventory the folder, categorize items by extension and purpose, and safely reorganize them with an activity summary.",
                 "steps": [
-                    {"description": "Scan and inventory target folder contents", "tool": "list_files", "risk_level": "low", "dependencies": []},
+                    {"description": "Scan and inventory target folder contents", "tool": inventory_tool, "risk_level": "low", "dependencies": []},
                     {"description": "Analyze file metadata and determine organization schema", "tool": "execute_code", "risk_level": "low", "dependencies": ["step-1"]},
-                    {"description": "Move files into categorized subfolders", "tool": "move_file", "risk_level": "medium", "dependencies": ["step-2"]},
+                    {"description": "Move files into categorized subfolders", "tool": move_tool, "risk_level": "medium", "dependencies": ["step-2"]},
                     {"description": "Generate folder organization summary report", "tool": "create_document", "risk_level": "low", "dependencies": ["step-3"]}
                 ]
             }
@@ -176,6 +220,49 @@ class OfflineHeuristicProvider(BaseLLMProvider):
                     {"description": "Search live sites for matching travel options", "tool": "browser_automation", "risk_level": "low", "dependencies": []},
                     {"description": "Hand browser control to the user at the checkout or login step", "tool": "browser_automation", "risk_level": "high", "dependencies": ["step-1"]}
                 ]
+            }
+
+        # UC-4: Competitor Research & Analysis. When the user asks for ten
+        # competitors, make the fan-out explicit in the task graph instead of
+        # pretending that one generic search satisfies the use case.
+        if "competitor" in task_lower and ("10" in task_lower or "ten" in task_lower):
+            search_steps = [
+                {
+                    "description": f"Research competitor {index} using public sources",
+                    "tool": "web_search",
+                    "risk_level": "low",
+                    "dependencies": [],
+                }
+                for index in range(1, 11)
+            ]
+            fetch_steps = [
+                {
+                    "description": f"Fetch and verify sources for competitor {index}",
+                    "tool": "web_fetch",
+                    "risk_level": "low",
+                    "dependencies": [f"step-{index}"],
+                }
+                for index in range(1, 11)
+            ]
+            fetch_ids = [f"step-{index}" for index in range(11, 21)]
+            search_steps.extend(fetch_steps)
+            search_steps.extend([
+                {
+                    "description": "Merge competitor findings and flag conflicting or missing data",
+                    "tool": "execute_code",
+                    "risk_level": "low",
+                    "dependencies": fetch_ids,
+                },
+                {
+                    "description": "Compile a cited comparison report",
+                    "tool": "create_document",
+                    "risk_level": "medium",
+                    "dependencies": ["step-21"],
+                },
+            ])
+            return {
+                "explanation": "I will fan out ten independent competitor research workstreams, merge conflicts visibly, and produce a cited comparison report.",
+                "steps": search_steps,
             }
 
         # UC-4: Competitor Research & Analysis
@@ -224,7 +311,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         }
 
     async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
-        return self.generate_plan_sync(task, memory_context)
+        return annotate_memory_context(self.generate_plan_sync(task, memory_context), memory_context)
 
     def reason_step_sync(
         self,
@@ -278,6 +365,12 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         elif tool == "move_file":
             params = {"source": "input.txt", "destination": "organized/input.txt"}
             narration = "Moving files into the approved organization..."
+        elif tool in {"bridge_list_files", "bridge_read_file"}:
+            params = {"folder": "", "relative_file": "." if tool == "bridge_list_files" else "input.txt"}
+            narration = "Requesting the explicitly granted local bridge folder..."
+        elif tool == "bridge_move_file":
+            params = {"folder": "", "relative_file": "input.txt", "destination_file": "organized/input.txt"}
+            narration = "Moving files inside the explicitly granted local folder..."
         elif tool == "delete_file":
             params = {"path": "duplicate_sample.tmp"}
             narration = "Requesting approval to purge file..."
@@ -289,11 +382,20 @@ class OfflineHeuristicProvider(BaseLLMProvider):
             }
             narration = "Preparing email dispatch (requires approval)..."
         elif tool == "web_search":
-            params = {"query": task[:60]}
-            narration = f"Searching web for '{task[:35]}...'..."
+            query = step.description if "competitor" in desc else task
+            params = {"query": query[:120]}
+            narration = f"Searching web for '{query[:45]}...'..."
         elif tool == "web_fetch":
-            params = {"url": "https://example.com/industry-data"}
-            narration = "Fetching research source data..."
+            source_url = None
+            for observation in reversed(prior_observations):
+                for item in (observation.get("result") or {}).get("results", []):
+                    if isinstance(item, dict) and item.get("url"):
+                        source_url = item["url"]
+                        break
+                if source_url:
+                    break
+            params = {"url": source_url or "https://example.com/industry-data"}
+            narration = "Fetching and verifying a live research source..."
         elif tool == "browser_automation":
             if "takeover" in desc or "login" in desc or "payment" in desc or "checkout" in desc:
                 params = {"action": "takeover", "url": "https://example.com/checkout"}
@@ -320,11 +422,50 @@ class OfflineHeuristicProvider(BaseLLMProvider):
     ) -> Dict[str, Any]:
         return self.reason_step_sync(task, step, prior_observations, tools_available)
 
+_provider_store = settings.DATA_DIR / "llm_provider.dpapi"
+_runtime_provider: Dict[str, str] = {}
+
+_saved = load_secret(_provider_store)
+if _saved:
+    try:
+        loaded = json.loads(_saved.decode("utf-8"))
+        if isinstance(loaded, dict):
+            _runtime_provider = {str(k): str(v) for k, v in loaded.items()}
+    except (ValueError, UnicodeDecodeError):
+        _runtime_provider = {}
+
+
+def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str = "", model: str = "") -> None:
+    global _runtime_provider
+    _runtime_provider = {"provider": provider, "api_key": api_key, "endpoint": endpoint, "model": model}
+    if provider == "offline_heuristic":
+        delete_secret(_provider_store)
+    else:
+        save_secret(_provider_store, json.dumps(_runtime_provider).encode("utf-8"))
+
+
+def current_provider_config() -> Dict[str, Any]:
+    provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
+    key = _runtime_provider.get("api_key", "")
+    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"ollama", "lm_studio"}
+    return {"provider": provider, "model": _runtime_provider.get("model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "configured": configured}
+
+
 def get_llm_client() -> BaseLLMProvider:
-    if settings.DEFAULT_PROVIDER == "openai" and settings.OPENAI_API_KEY:
-        return OpenAILLMProvider(settings.OPENAI_API_KEY)
-    if settings.DEFAULT_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
-        return GeminiLLMProvider(settings.GEMINI_API_KEY)
-    if settings.ANTHROPIC_API_KEY:
-        return AnthropicLLMProvider(settings.ANTHROPIC_API_KEY)
+    provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
+    api_key = _runtime_provider.get("api_key", "") or {
+        "openai": settings.OPENAI_API_KEY,
+        "anthropic": settings.ANTHROPIC_API_KEY,
+        "gemini": settings.GEMINI_API_KEY,
+    }.get(provider, "")
+    if provider == "openai" and api_key:
+        return OpenAILLMProvider(api_key)
+    if provider == "gemini" and api_key:
+        return GeminiLLMProvider(api_key)
+    if provider == "anthropic" and api_key:
+        return AnthropicLLMProvider(api_key)
+    if provider in {"ollama", "lm_studio"}:
+        endpoint = _runtime_provider.get("endpoint") or ("http://127.0.0.1:11434/v1" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        model = _runtime_provider.get("model") or ("llama3.2" if provider == "ollama" else "local-model")
+        return OpenAICompatibleLLMProvider(endpoint, model, api_key)
     return OfflineHeuristicProvider()

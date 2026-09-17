@@ -5,6 +5,8 @@ import argparse
 import json
 import threading
 import urllib.request
+import ssl
+import shutil
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import List, Optional
@@ -71,6 +73,16 @@ class LocalBridgeAgent:
             if not target.is_file():
                 raise FileNotFoundError("Granted file not found.")
             return {"action": "read", "path": str(target), "content": target.read_text(encoding="utf-8", errors="replace")}
+        if action == "move":
+            destination = payload.get("destination_file", "")
+            if not destination:
+                raise ValueError("destination_file is required for move actions.")
+            destination_path = self.verify_path_access(str(folder / destination))
+            if destination_path.exists():
+                raise FileExistsError("Destination already exists.")
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(target), str(destination_path))
+            return {"action": "move", "source": str(target), "destination": str(destination_path)}
         raise ValueError(f"Unsupported bridge action: {action}")
 
     def browser_action(self, payload: dict) -> dict:
@@ -104,7 +116,7 @@ class LocalBridgeAgent:
         except Exception as exc:
             return {"success": False, "status": "browser_error", "error": str(exc)}
 
-def serve(agent: LocalBridgeAgent, host: str, port: int):
+def serve(agent: LocalBridgeAgent, host: str, port: int, certfile: Optional[str] = None, keyfile: Optional[str] = None):
     class Handler(BaseHTTPRequestHandler):
         def _json(self, status: int, payload: dict):
             body = json.dumps(payload).encode("utf-8")
@@ -129,6 +141,12 @@ def serve(agent: LocalBridgeAgent, host: str, port: int):
             if self.path == "/browser":
                 result = agent.browser_action(payload)
                 self._json(200 if result.get("success") else 503, result)
+            elif self.path == "/grant_folder":
+                agent.add_folder(payload.get("folder_path", ""))
+                self._json(200, {"status": "granted"})
+            elif self.path == "/revoke_folder":
+                agent.revoke_folder(payload.get("folder_path", ""))
+                self._json(200, {"status": "revoked"})
             elif self.path == "/file":
                 try:
                     self._json(200, agent.file_action(payload))
@@ -144,7 +162,14 @@ def serve(agent: LocalBridgeAgent, host: str, port: int):
         def log_message(self, *_args):
             return
 
-    HTTPServer((host, port), Handler).serve_forever()
+    server = HTTPServer((host, port), Handler)
+    if bool(certfile) != bool(keyfile):
+        raise ValueError("Both --certfile and --keyfile are required for TLS bridge transport.")
+    if certfile and keyfile:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    server.serve_forever()
 
 def register_with_orchestrator(orchestrator: str, agent: LocalBridgeAgent, session_id: Optional[str], allow_browser: bool):
     payload = json.dumps({
@@ -159,15 +184,21 @@ def register_with_orchestrator(orchestrator: str, agent: LocalBridgeAgent, sessi
         headers={"Content-Type": "application/json", "X-Bridge-Token": agent.token},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=10):
-        pass
+    with urllib.request.urlopen(request, timeout=10) as response:
+        registration = json.loads(response.read().decode("utf-8"))
+    session_token = registration.get("session_token")
+    master_token = agent.token
+    if session_token:
+        # The HTTP file/browser server uses the session-scoped token. The
+        # master token remains private to registration and heartbeat calls.
+        agent.token = session_token
 
     def heartbeat():
         while True:
             try:
                 heartbeat_request = urllib.request.Request(
                     f"{orchestrator.rstrip('/')}/v1/bridge/heartbeat",
-                    headers={"X-Bridge-Token": agent.token},
+                    headers={"X-Bridge-Token": master_token},
                     method="POST",
                 )
                 with urllib.request.urlopen(heartbeat_request, timeout=10):
@@ -188,6 +219,8 @@ if __name__ == "__main__":
     parser.add_argument("--orchestrator", default="", help="Orchestrator URL used to register this bridge")
     parser.add_argument("--session-id", default=None, help="Session whose grants this bridge serves")
     parser.add_argument("--allow-browser", action="store_true", help="Grant browser control for the registered session")
+    parser.add_argument("--certfile", default="", help="TLS certificate PEM for encrypted bridge transport")
+    parser.add_argument("--keyfile", default="", help="TLS private-key PEM for encrypted bridge transport")
     args = parser.parse_args()
 
     agent = LocalBridgeAgent(token=args.token, granted_folders=args.folder or [])
@@ -202,5 +235,6 @@ if __name__ == "__main__":
                 print("[Bridge] Registered with orchestrator.")
             except Exception as exc:
                 print(f"[Bridge Warning] Orchestrator registration failed: {exc}")
-        print(f"[Bridge] HTTP transport listening on http://{args.host}:{args.port}")
-        serve(agent, args.host, args.port)
+        scheme = "https" if args.certfile and args.keyfile else "http"
+        print(f"[Bridge] {scheme.upper()} transport listening on {scheme}://{args.host}:{args.port}")
+        serve(agent, args.host, args.port, args.certfile or None, args.keyfile or None)

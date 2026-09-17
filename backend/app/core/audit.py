@@ -5,6 +5,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from app.config import settings
+from app.core.tracing import get_trace_id
 
 class AuditLogger:
     def __init__(self, log_dir: Optional[str] = None):
@@ -52,6 +53,9 @@ class AuditLogger:
             return value
 
         details = redact(details)
+        trace_id = get_trace_id()
+        if trace_id and "trace_id" not in details:
+            details = {**details, "trace_id": trace_id}
         
         payload_to_hash = {
             "session_id": session_id,

@@ -56,7 +56,8 @@ class WriteFileTool(BaseTool):
         content = kwargs.get("content", "")
         sandbox = sandbox_manager.get_or_create(session_id)
         target = sandbox.resolve_path(rel_path)
-        
+        previous_size = target.stat().st_size if target.exists() and target.is_file() else 0
+        sandbox.ensure_disk_capacity(previous_size + len(content.encode("utf-8")))
         target.parent.mkdir(parents=True, exist_ok=True)
         
         # Rule 4.2: Snapshot prior version before overwrite
@@ -87,6 +88,7 @@ class CreateFileTool(WriteFileTool):
         target = sandbox.resolve_path(rel_path)
         if target.exists():
             return {"success": False, "error": f"File already exists: {rel_path}"}
+        sandbox.ensure_disk_capacity(len(str(kwargs.get("content", "")).encode("utf-8")))
         target.parent.mkdir(parents=True, exist_ok=True)
         content = kwargs.get("content", "")
         target.write_text(content, encoding="utf-8")
