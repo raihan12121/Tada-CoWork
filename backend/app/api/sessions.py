@@ -32,6 +32,8 @@ async def create_session(request: Request, payload: SessionCreate):
         return await session_manager.create_session(payload)
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.get("", response_model=List[SessionModel])
 async def list_sessions(request: Request, limit: int = Query(20, ge=1, le=100)):

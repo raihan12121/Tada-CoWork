@@ -18,6 +18,7 @@ class DBSession(Base):
     id = Column(String, primary_key=True)
     task = Column(Text, nullable=False)
     workspace_id = Column(String, default="default")
+    provider_account_id = Column(String, nullable=True)
     status = Column(String, default="created")
     tool_calls_count = Column(Integer, default=0)
     total_cost_usd = Column(Float, default=0.0)
@@ -268,6 +269,7 @@ async def init_db():
             result = await conn.execute(text("PRAGMA table_info(sessions)"))
             existing = {row[1] for row in result.fetchall()}
             additions = {
+                "provider_account_id": "TEXT",
                 "enabled_tools_json": "TEXT DEFAULT '[]'",
                 "granted_folders_json": "TEXT DEFAULT '[]'",
                 "max_steps": "INTEGER DEFAULT 30",

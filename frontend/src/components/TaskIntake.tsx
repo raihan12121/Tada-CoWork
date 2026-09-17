@@ -9,15 +9,18 @@ import {
   ArrowRight,
   ShieldAlert
 } from 'lucide-react';
+import type { ProviderAccount } from '../services/api';
 
 interface TaskIntakeProps {
-  onSubmitTask: (task: string, files: File[]) => void;
+  onSubmitTask: (task: string, files: File[], providerAccountId?: string) => void;
   isLoading: boolean;
+  providerAccounts: ProviderAccount[];
 }
 
-export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading }) => {
+export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading, providerAccounts }) => {
   const [taskInput, setTaskInput] = useState('');
   const [inputFiles, setInputFiles] = useState<File[]>([]);
+  const [providerAccountId, setProviderAccountId] = useState('');
 
   const templates = [
     {
@@ -50,7 +53,7 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskInput.trim() || isLoading) return;
-    onSubmitTask(taskInput.trim(), inputFiles);
+    onSubmitTask(taskInput.trim(), inputFiles, providerAccountId || undefined);
   };
 
   return (
@@ -90,6 +93,10 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading 
               Attach inputs{inputFiles.length ? ` (${inputFiles.length})` : ''}
               <input type="file" multiple className="hidden" disabled={isLoading} onChange={(e) => setInputFiles(Array.from(e.target.files || []))} />
             </label>
+            <select value={providerAccountId} onChange={(e) => setProviderAccountId(e.target.value)} disabled={isLoading} className="bg-[#0d1117] border border-[#30363d] text-[11px] text-gray-300 rounded-lg py-1.5 px-2 mr-2 max-w-[210px]">
+              <option value="">Use active AI account</option>
+              {providerAccounts.filter(a => a.configured && a.status !== 'quota_exhausted').map(account => <option key={account.id} value={account.id}>{account.label} · {account.provider}</option>)}
+            </select>
             <button
               type="submit"
               disabled={!taskInput.trim() || isLoading}

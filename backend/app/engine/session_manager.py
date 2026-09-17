@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, update, or_, delete
-from app.db.session import AsyncSessionLocal, DBSession, DBExecutionJob, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent
+from app.db.session import AsyncSessionLocal, DBSession, DBExecutionJob, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent, DBProviderAccount
 from app.models.schemas import (
     SessionModel, SessionCreate, PlanModel, StepBase, ArtifactModel, ApprovalRequest, ActivityFeedEvent
 )
@@ -15,6 +15,8 @@ from app.memory.long_term_memory import long_term_memory
 from app.core.audit import audit_logger
 from app.core.org_policy import org_policy_manager
 from app.sandbox.process_sandbox import sandbox_manager
+from app.core.llm import get_llm_client_for_account
+from app.core.provider_accounts import load_account_secret
 
 class SessionManager:
     def __init__(self):
@@ -72,6 +74,14 @@ class SessionManager:
     async def create_session(self, task_data: SessionCreate) -> SessionModel:
         org_policy_manager.assert_data_region_available(task_data.workspace_id)
         session_id = str(uuid.uuid4())
+
+        if task_data.provider_account_id:
+            async with AsyncSessionLocal() as db:
+                account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == task_data.provider_account_id, DBProviderAccount.workspace_id == task_data.workspace_id))).scalar_one_or_none()
+            if not account:
+                raise ValueError("Selected provider account was not found in this workspace")
+            if account.status == "quota_exhausted":
+                raise ValueError("Selected provider account is quota exhausted; choose another account")
         
         # Recall relevant long-term memory
         relevant_memories = await long_term_memory.retrieve_relevant_memory(
@@ -86,6 +96,7 @@ class SessionManager:
                 id=session_id,
                 task=task_data.task,
                 workspace_id=task_data.workspace_id,
+                provider_account_id=task_data.provider_account_id,
                 status="planning",
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
@@ -109,7 +120,8 @@ class SessionManager:
         plan = await planner_engine.generate_initial_plan(
             session_id=session_id,
             task=task_data.task,
-            memory_context=memory_context
+            memory_context=memory_context,
+            provider_account_id=task_data.provider_account_id,
         )
 
         # An empty allow-list means "tools required by this plan", never the
@@ -136,6 +148,7 @@ class SessionManager:
             id=session_id,
             task=task_data.task,
             workspace_id=task_data.workspace_id,
+            provider_account_id=task_data.provider_account_id,
             status="created",
             plan=plan,
             artifacts=[],
@@ -186,6 +199,17 @@ class SessionManager:
         if not claimed.rowcount:
             return
 
+        provider_client = None
+        if session.provider_account_id:
+            async with AsyncSessionLocal() as db:
+                account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == session.provider_account_id, DBProviderAccount.workspace_id == session.workspace_id))).scalar_one_or_none()
+            if not account:
+                raise ValueError("Selected provider account no longer exists")
+            if account.status == "quota_exhausted":
+                raise ValueError("Selected provider account is quota exhausted; choose another account")
+            secret = load_account_secret(account.id).get("secret", "")
+            provider_client = get_llm_client_for_account(account.provider, secret, account.endpoint or "", account.model or "")
+
         # Create executor instance
         executor = ExecutorSession(
             session_id=session_id,
@@ -198,6 +222,7 @@ class SessionManager:
             granted_scopes=session.granted_scopes,
             granted_domains=session.granted_domains,
             granted_folders=session.granted_folders,
+            llm=provider_client,
         )
         self._active_executors[session_id] = executor
 
@@ -419,6 +444,7 @@ class SessionManager:
                 id=db_sess.id,
                 task=db_sess.task,
                 workspace_id=db_sess.workspace_id,
+                provider_account_id=db_sess.provider_account_id,
                 status=db_sess.status, # type: ignore
                 plan=plan_model,
                 artifacts=artifacts,

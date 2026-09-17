@@ -11,7 +11,7 @@ from app.models.schemas import (
 )
 from app.core.safety import safety_engine
 from app.core.audit import audit_logger
-from app.core.llm import get_llm_client
+from app.core.llm import get_llm_client, BaseLLMProvider
 from app.tools.registry import tool_registry
 from app.engine.approval_gate import approval_gate_manager
 from app.engine.planner import planner_engine
@@ -36,11 +36,12 @@ class ExecutorSession:
         granted_scopes: Optional[List[str]] = None,
         granted_folders: Optional[List[str]] = None,
         granted_domains: Optional[List[str]] = None,
+        llm: Optional[BaseLLMProvider] = None,
     ):
         self.session_id = session_id
         self.workspace_id = workspace_id
         self.event_callback = event_callback
-        self.llm = get_llm_client()
+        self.llm = llm or get_llm_client()
         self.working_memory = WorkingMemory(session_id)
         self.is_paused = False
         self.is_cancelled = False

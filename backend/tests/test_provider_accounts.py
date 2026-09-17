@@ -56,3 +56,21 @@ async def test_claude_code_provider_parses_json_output(monkeypatch):
     monkeypatch.setattr(provider, "_run", fake_run)
     result = await provider.generate_plan("test")
     assert result["explanation"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_session_can_pin_an_explicit_provider_account():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post("/v1/settings/accounts", json={
+            "provider": "offline_heuristic",
+            "label": "Deterministic test account",
+            "auth_type": "api_key",
+        })
+        assert created.status_code == 200
+        account_id = created.json()["id"]
+        session = await client.post("/v1/sessions", json={"task": "Create a short report", "provider_account_id": account_id})
+        assert session.status_code == 200
+        assert session.json()["provider_account_id"] == account_id
+        removed = await client.delete(f"/v1/settings/accounts/{account_id}")
+        assert removed.status_code == 200

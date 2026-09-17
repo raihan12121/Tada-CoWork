@@ -130,6 +130,7 @@ class ConnectorModel(BaseModel):
 class SessionCreate(BaseModel):
     task: str = Field(..., min_length=1)
     workspace_id: str = "default"
+    provider_account_id: Optional[str] = None
     granted_folders: List[str] = Field(default_factory=list)
     enabled_tools: List[str] = Field(default_factory=list)
     granted_scopes: List[str] = Field(default_factory=list)
@@ -146,6 +147,7 @@ class SessionModel(BaseModel):
     id: str
     task: str
     workspace_id: str = "default"
+    provider_account_id: Optional[str] = None
     status: SessionStatus = "created"
     plan: Optional[PlanModel] = None
     artifacts: List[ArtifactModel] = Field(default_factory=list)

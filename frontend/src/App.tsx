@@ -12,6 +12,7 @@ import { AuditViewer } from './components/AuditViewer';
 import { ProviderSettings } from './components/ProviderSettings';
 import type { Session, ActivityEvent } from './types';
 import { api } from './services/api';
+import type { ProviderAccount } from './services/api';
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('workspace');
@@ -20,6 +21,7 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [usage, setUsage] = useState<{ tool_calls: number; tool_call_limit: number; steps_completed: number; step_limit: number; estimated_cost_usd: number; runtime_limit_seconds: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [providerAccounts, setProviderAccounts] = useState<ProviderAccount[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -44,6 +46,8 @@ export const App: React.FC = () => {
       ignore = true;
     };
   }, [activeSessionId]);
+
+  useEffect(() => { api.listProviderAccounts().then(setProviderAccounts).catch(() => setProviderAccounts([])); }, [currentTab]);
 
   // WebSocket Live Streaming for Active Session
   useEffect(() => {
@@ -93,10 +97,10 @@ export const App: React.FC = () => {
     };
   }, [activeSessionId]);
 
-  const handleCreateSession = async (task: string, files: File[] = []) => {
+  const handleCreateSession = async (task: string, files: File[] = [], providerAccountId?: string) => {
     setIsLoading(true);
     try {
-      const newSession = await api.createSession(task);
+      const newSession = await api.createSession(task, 'default', providerAccountId);
       for (const file of files) await api.uploadSessionInput(newSession.id, file);
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
@@ -213,6 +217,7 @@ export const App: React.FC = () => {
               <TaskIntake
                 onSubmitTask={handleCreateSession}
                 isLoading={isLoading}
+                providerAccounts={providerAccounts}
               />
             ) : (
               <div className="space-y-6">

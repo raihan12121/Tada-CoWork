@@ -3,9 +3,11 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, update, delete
-from app.db.session import AsyncSessionLocal, DBPlan, DBStep
+from app.db.session import AsyncSessionLocal, DBPlan, DBStep, DBProviderAccount
 from app.models.schemas import PlanModel, StepBase, RiskLevel, PlanEditRequest
 from app.core.llm import get_llm_client
+from app.core.llm import get_llm_client_for_account
+from app.core.provider_accounts import load_account_secret
 from app.core.audit import audit_logger
 from app.tools.registry import tool_registry
 
@@ -17,11 +19,19 @@ class PlannerEngine:
         self,
         session_id: str,
         task: str,
-        memory_context: str = ""
+        memory_context: str = "",
+        provider_account_id: Optional[str] = None,
     ) -> PlanModel:
         # Provider settings can be changed from the desktop Settings panel
         # while the server is running.
         self.llm = get_llm_client()
+        if provider_account_id:
+            async with AsyncSessionLocal() as db:
+                account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == provider_account_id))).scalar_one_or_none()
+            if not account:
+                raise ValueError("Selected provider account was not found")
+            secret = load_account_secret(account.id).get("secret", "")
+            self.llm = get_llm_client_for_account(account.provider, secret, account.endpoint or "", account.model or "")
         plan_data = await self.llm.generate_plan(task, memory_context)
         plan_id = str(uuid.uuid4())
         explanation = plan_data.get("explanation", "Initial plan generated.")
