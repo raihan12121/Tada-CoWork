@@ -231,6 +231,10 @@ class GeminiLLMProvider(OpenAILLMProvider):
         try:
             async with httpx.AsyncClient(timeout=45.0) as client:
                 response = await client.post(self.endpoint, json={"contents": [{"parts": [{"text": f"{system}\n{prompt}"}]}]})
+                if response.status_code == 429:
+                    raise RuntimeError("Gemini quota exhausted or rate limited (HTTP 429)")
+                if response.status_code in {401, 403}:
+                    raise RuntimeError(f"Gemini authentication or permission failed (HTTP {response.status_code})")
                 response.raise_for_status()
                 text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
                 start, end = text.find("{"), text.rfind("}") + 1

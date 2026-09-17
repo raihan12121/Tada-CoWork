@@ -111,11 +111,15 @@ async def test_provider_account(request: Request, account_id: str):
             result = await client.generate_plan("Reply with a one-step plan for testing the configured AI connection.")
             if not result.get("steps"):
                 raise ValueError("The provider returned no structured plan")
-            row.status, row.last_error, row.quota_status = "active", None, "unknown"
+            row.status, row.last_error, row.quota_status = "active", None, "available"
             await db.commit()
             return {"success": True, "provider": row.provider, "model": row.model or "default"}
         except Exception as exc:
-            row.status, row.last_error = "error", str(exc)[:1000]
+            message = str(exc)[:1000]
+            lowered = message.lower()
+            row.status = "quota_exhausted" if "quota" in lowered or "429" in lowered else "error"
+            row.quota_status = "exhausted" if row.status == "quota_exhausted" else ("unauthorized" if "401" in lowered or "403" in lowered else "unknown")
+            row.last_error = message
             await db.commit()
             raise HTTPException(status_code=502, detail=f"AI provider test failed: {exc}") from exc
 
