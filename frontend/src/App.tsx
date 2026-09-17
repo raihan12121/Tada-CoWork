@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, X, Plus } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TaskIntake } from './components/TaskIntake';
 import { PlanView } from './components/PlanView';
@@ -212,71 +212,44 @@ export const App: React.FC = () => {
         {currentTab === 'settings' && <ProviderSettings />}
 
         {currentTab === 'workspace' && (
-          <div className="p-6 max-w-6xl mx-auto w-full">
+          <div className="claude-content">
             {!activeSession ? (
-              <TaskIntake
-                onSubmitTask={handleCreateSession}
-                isLoading={isLoading}
-                providerAccounts={providerAccounts}
-              />
-            ) : (
-              <div className="space-y-6">
-                {/* Active Session Task Banner */}
-                <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex items-center justify-between shadow-md">
-                  <div className="min-w-0 pr-4">
-                    <div className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">
-                      Active Workstream
-                    </div>
-                    <h2 className="text-base font-bold text-white truncate mt-0.5">
-                      {activeSession.task}
-                    </h2>
+              <>
+                <div className="claude-topbar">
+                  <div>
+                    <div className="claude-eyebrow">Workspace</div>
+                    <h1 className="claude-page-title">What are you working on?</h1>
+                    <p className="claude-page-subtitle">Give Coagent a goal and it will turn it into an executable work plan.</p>
                   </div>
-                  <button
-                    onClick={() => setActiveSession(null)}
-                    className="text-xs text-gray-400 hover:text-white bg-[#21262d] px-3 py-1.5 rounded-lg border border-[#30363d] transition shrink-0"
-                  >
-                    Start New Task
-                  </button>
+                  <div className="claude-status-pill"><span />Ready to work</div>
                 </div>
-
-                {/* Plan View and Live Activity Feed */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {activeSession.plan && (
-                    <PlanView
-                      plan={activeSession.plan}
-                      sessionStatus={activeSession.status}
-                      onStartExecution={handleStartExecution}
-                      onDeleteStep={handleDeleteStep}
-                      onAddStep={handleAddStep}
-                      onReorderSteps={handleReorderSteps}
-                    />
-                  )}
-
-                  <ActivityFeed
-                    events={events}
-                    sessionStatus={activeSession.status}
-                    pendingApproval={activeSession.pending_approval}
-                    onPause={handlePause}
-                    onResume={handleResume}
-                    onCancel={handleCancel}
-                    onResolveApproval={handleResolveApproval}
-                  />
-                </div>
-
-                {usage && (
-                  <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                    <div><div className="text-gray-500 uppercase text-[10px]">Tool calls</div><div className="text-white font-semibold">{usage.tool_calls} / {usage.tool_call_limit}</div></div>
-                    <div><div className="text-gray-500 uppercase text-[10px]">Steps</div><div className="text-white font-semibold">{usage.steps_completed} / {usage.step_limit}</div></div>
-                    <div><div className="text-gray-500 uppercase text-[10px]">Estimated cost</div><div className="text-white font-semibold">${usage.estimated_cost_usd.toFixed(4)}</div></div>
-                    <div><div className="text-gray-500 uppercase text-[10px]">Runtime cap</div><div className="text-white font-semibold">{usage.runtime_limit_seconds}s</div></div>
-                  </div>
-                )}
-
-                {/* Delivered Artifacts */}
-                <ArtifactPanel
-                  artifacts={activeSession.artifacts}
-                  sessionId={activeSession.id}
+                <TaskIntake
+                  onSubmitTask={handleCreateSession}
+                  isLoading={isLoading}
+                  providerAccounts={providerAccounts}
                 />
+              </>
+            ) : (
+              <div className="claude-workspace">
+                <div className="claude-topbar claude-task-topbar">
+                  <div className="min-w-0 pr-4">
+                    <div className="claude-eyebrow">Active task · {activeSession.status.replace('_', ' ')}</div>
+                    <h1 className="claude-page-title truncate">{activeSession.task}</h1>
+                  </div>
+                  <button onClick={() => setActiveSession(null)} className="claude-secondary-button shrink-0"><Plus className="w-4 h-4" /> New task</button>
+                </div>
+
+                <div className="claude-workspace-grid">
+                  <section className="claude-main-column">
+                    <div className="claude-section-heading"><div><div className="claude-eyebrow">Execution</div><h2>Live activity</h2></div><span className="claude-live-indicator"><span /> Live</span></div>
+                    <ActivityFeed events={events} sessionStatus={activeSession.status} pendingApproval={activeSession.pending_approval} onPause={handlePause} onResume={handleResume} onCancel={handleCancel} onResolveApproval={handleResolveApproval} />
+                  </section>
+                  <aside className="claude-inspector">
+                    {activeSession.plan && <PlanView plan={activeSession.plan} sessionStatus={activeSession.status} onStartExecution={handleStartExecution} onDeleteStep={handleDeleteStep} onAddStep={handleAddStep} onReorderSteps={handleReorderSteps} />}
+                    {usage && <div className="claude-usage-card"><div className="claude-eyebrow">Task usage</div><div className="claude-stat-grid"><div><strong>{usage.tool_calls}</strong><span>Tool calls</span></div><div><strong>{usage.steps_completed}</strong><span>Steps</span></div><div><strong>${usage.estimated_cost_usd.toFixed(4)}</strong><span>Est. cost</span></div><div><strong>{usage.runtime_limit_seconds}s</strong><span>Runtime cap</span></div></div></div>}
+                    <ArtifactPanel artifacts={activeSession.artifacts} sessionId={activeSession.id} />
+                  </aside>
+                </div>
               </div>
             )}
           </div>
