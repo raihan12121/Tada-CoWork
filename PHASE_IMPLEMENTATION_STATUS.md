@@ -30,6 +30,7 @@ Implemented:
 - Desktop AI provider setup for OpenAI, Anthropic, Gemini, Ollama, and LM Studio with connection testing and explicit offline-preview labeling.
 - Multi-account AI provider infrastructure: account metadata in SQLite, per-account Windows DPAPI secrets, account selection/testing/removal APIs, and account-management UI. This currently covers API-key and local accounts; provider subscription OAuth remains adapter-specific and disabled until approved credentials/flows are configured.
 - OpenAI/Codex subscription route: Coagent can invoke the user-authenticated official `codex exec` CLI in read-only, non-interactive, ephemeral mode. Coagent never reads Codex credentials; the CLI owns ChatGPT login, quota, refresh, and provider policy.
+- Claude subscription route: Coagent can invoke the user-authenticated official `claude -p` CLI in one-turn plan mode with JSON output. Coagent never reads Claude credentials; Claude Code owns subscription authentication, quota, refresh, and provider policy.
 - Hash-chained append-only audit log and DB tool-call records.
 
 Verified by the Phase 0 tests and the full regression suite.

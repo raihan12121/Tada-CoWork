@@ -175,6 +175,53 @@ class OpenAICodexCLIProvider(BaseLLMProvider):
         return await self._json_call("Return ONLY valid JSON with keys thought, narration, tool, params. Choose only an available tool. " + json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available}))
 
 
+class AnthropicClaudeCLIProvider(BaseLLMProvider):
+    """Use the official Claude Code CLI login for Pro/Max subscriptions."""
+    def __init__(self, command: str = ""):
+        self.command = command or os.getenv("COAGENT_CLAUDE_COMMAND", "") or shutil.which("claude") or "claude"
+
+    async def _run(self, prompt: str) -> str:
+        args = [self.command, "-p", prompt, "--output-format", "json", "--max-turns", "1", "--permission-mode", "plan"]
+        try:
+            process = await asyncio.create_subprocess_exec(*args, cwd=str(settings.BASE_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+        except FileNotFoundError as exc:
+            raise RuntimeError("Claude Code CLI was not found. Install Claude Code and sign in with your Claude account first.") from exc
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.communicate()
+            raise RuntimeError("Claude Code request timed out") from exc
+        if process.returncode != 0:
+            detail = stderr.decode("utf-8", errors="replace").strip()[-1000:]
+            raise RuntimeError(detail or f"Claude Code exited with code {process.returncode}")
+        raw = stdout.decode("utf-8", errors="replace").strip()
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, dict) and isinstance(payload.get("result"), str):
+                return payload["result"]
+            if isinstance(payload, dict) and isinstance(payload.get("text"), str):
+                return payload["text"]
+            return raw
+        except ValueError:
+            return raw
+
+    async def _json_call(self, prompt: str) -> Dict[str, Any]:
+        text = await self._run(prompt)
+        start, end = text.find("{"), text.rfind("}") + 1
+        if start < 0 or end <= start:
+            raise RuntimeError("Claude Code returned non-JSON output")
+        try:
+            return json.loads(text[start:end])
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Claude Code returned invalid JSON") from exc
+
+    async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
+        return await self._json_call("Return ONLY valid JSON with keys explanation and steps. Each step must contain description, tool, risk_level, dependencies. " + f"Task: {task}\nMemory context: {memory_context}")
+
+    async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
+        return await self._json_call("Return ONLY valid JSON with keys thought, narration, tool, params. Choose only an available tool. " + json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available}))
+
+
 class GeminiLLMProvider(OpenAILLMProvider):
     def __init__(self, api_key: str):
         super().__init__(api_key)
@@ -500,7 +547,7 @@ def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str =
 def current_provider_config() -> Dict[str, Any]:
     provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
     key = _runtime_provider.get("api_key", "")
-    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"openai_codex", "ollama", "lm_studio"}
+    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"openai_codex", "anthropic_claude", "ollama", "lm_studio"}
     return {"provider": provider, "model": _runtime_provider.get("model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "configured": configured, "account_id": _runtime_provider.get("account_id") or None}
 
 
@@ -508,6 +555,8 @@ def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str =
     """Construct a provider client from an explicitly selected account."""
     if provider == "openai_codex":
         return OpenAICodexCLIProvider()
+    if provider == "anthropic_claude":
+        return AnthropicClaudeCLIProvider()
     if provider == "openai" and api_key:
         client = OpenAILLMProvider(api_key)
         if model:
@@ -533,6 +582,8 @@ def get_llm_client() -> BaseLLMProvider:
     }.get(provider, "")
     if provider == "openai_codex":
         return OpenAICodexCLIProvider()
+    if provider == "anthropic_claude":
+        return AnthropicClaudeCLIProvider()
     if provider == "openai" and api_key:
         return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
     if provider == "gemini" and api_key:

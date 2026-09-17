@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.main import app
-from app.core.llm import OpenAICodexCLIProvider
+from app.core.llm import OpenAICodexCLIProvider, AnthropicClaudeCLIProvider
 
 
 @pytest.mark.asyncio
@@ -37,6 +37,18 @@ async def test_provider_account_lifecycle_for_local_model():
 @pytest.mark.asyncio
 async def test_codex_cli_provider_parses_structured_response(monkeypatch):
     provider = OpenAICodexCLIProvider(command="codex")
+
+    async def fake_run(_prompt):
+        return '{"explanation":"ok","steps":[]}'
+
+    monkeypatch.setattr(provider, "_run", fake_run)
+    result = await provider.generate_plan("test")
+    assert result["explanation"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_provider_parses_json_output(monkeypatch):
+    provider = AnthropicClaudeCLIProvider(command="claude")
 
     async def fake_run(_prompt):
         return '{"explanation":"ok","steps":[]}'

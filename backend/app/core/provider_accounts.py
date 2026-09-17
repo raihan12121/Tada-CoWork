@@ -10,7 +10,7 @@ from app.core.secret_store import delete_secret, load_secret, save_secret
 
 ACCOUNT_SECRET_DIR = settings.DATA_DIR / "provider_accounts"
 
-SUPPORTED_PROVIDERS = {"openai", "openai_codex", "anthropic", "gemini", "ollama", "lm_studio", "offline_heuristic"}
+SUPPORTED_PROVIDERS = {"openai", "openai_codex", "anthropic", "anthropic_claude", "gemini", "ollama", "lm_studio", "offline_heuristic"}
 SUPPORTED_AUTH_TYPES = {"api_key", "local", "oauth"}
 
 
@@ -53,7 +53,7 @@ def sanitized_account(row: Any, active_id: Optional[str] = None) -> Dict[str, An
         "model": row.model or "",
         "endpoint": row.endpoint or "",
         "status": row.status,
-        "configured": bool(row.secret_ref) or row.provider in {"openai_codex", "ollama", "lm_studio", "offline_heuristic"},
+        "configured": bool(row.secret_ref) or row.provider in {"openai_codex", "anthropic_claude", "ollama", "lm_studio", "offline_heuristic"},
         "quota_status": row.quota_status,
         "quota_remaining": row.quota_remaining,
         "quota_reset_at": row.quota_reset_at.isoformat() if row.quota_reset_at else None,

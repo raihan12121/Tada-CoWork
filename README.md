@@ -109,7 +109,7 @@ When identity verification is enabled, configure `VITE_IDENTITY_TOKEN` with a si
 
 ### Configure the AI provider
 
-Open the **AI Provider** item in the desktop sidebar. Add one or more OpenAI, Anthropic, or Gemini API-key accounts, choose **ChatGPT subscription via Codex CLI** for an already-authenticated official Codex CLI installation, or choose Ollama/LM Studio for a local OpenAI-compatible endpoint. Select an account and use **Test account** before starting a task. Hosted-provider credentials are encrypted with the Windows user-bound DPAPI store and are never returned to the UI or written to SQLite. `offline_heuristic` is an explicitly labeled no-AI preview mode.
+Open the **AI Provider** item in the desktop sidebar. Add one or more OpenAI, Anthropic, or Gemini API-key accounts, choose **ChatGPT subscription via Codex CLI** or **Claude subscription via Claude Code CLI** for an already-authenticated official CLI installation, or choose Ollama/LM Studio for a local OpenAI-compatible endpoint. Select an account and use **Test account** before starting a task. Hosted-provider credentials are encrypted with the Windows user-bound DPAPI store and are never returned to the UI or written to SQLite. `offline_heuristic` is an explicitly labeled no-AI preview mode.
 
 When marketplace review is enabled, approved connector manifests must carry an HMAC-SHA256 signature over their canonical metadata and, in production, pass the staged package scan. The built-in scan verifies the declared digest and rejects unsafe archive paths, links, and executable binaries; deployment registries should add malware and dependency scanning before distribution.
 
