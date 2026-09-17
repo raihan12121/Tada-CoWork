@@ -187,7 +187,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased overflow-hidden">
+    <div className="apple-shell flex h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased overflow-hidden">
       {/* Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}

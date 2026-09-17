@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-64 bg-[#161b22] border-r border-[#30363d] flex flex-col h-screen select-none">
+    <aside className="apple-sidebar w-64 bg-[#161b22] border-r border-[#30363d] flex flex-col h-screen select-none">
       {/* Brand Header */}
       <div className="p-4 border-b border-[#30363d] flex items-center justify-between">
         <div className="flex items-center space-x-2">
