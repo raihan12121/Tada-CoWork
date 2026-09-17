@@ -23,6 +23,39 @@ class BaseLLMProvider:
     async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
         raise NotImplementedError
 
+
+class AccountFailoverLLMProvider(BaseLLMProvider):
+    """Explicitly opt-in failover for quota/rate-limit errors only."""
+    def __init__(self, clients: List[BaseLLMProvider]):
+        self.clients = clients
+
+    @staticmethod
+    def _is_quota_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(marker in text for marker in ("quota", "rate limit", "429", "too many requests"))
+
+    async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
+        last: Optional[Exception] = None
+        for client in self.clients:
+            try:
+                return await client.generate_plan(task, memory_context)
+            except Exception as exc:
+                last = exc
+                if not self._is_quota_error(exc):
+                    raise
+        raise RuntimeError(f"All configured provider accounts are quota-limited: {last}")
+
+    async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
+        last: Optional[Exception] = None
+        for client in self.clients:
+            try:
+                return await client.reason_step(task, step, prior_observations, tools_available)
+            except Exception as exc:
+                last = exc
+                if not self._is_quota_error(exc):
+                    raise
+        raise RuntimeError(f"All configured provider accounts are quota-limited: {last}")
+
     async def reason_step(
         self,
         task: str,

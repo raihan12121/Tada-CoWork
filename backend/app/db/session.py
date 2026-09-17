@@ -19,6 +19,7 @@ class DBSession(Base):
     task = Column(Text, nullable=False)
     workspace_id = Column(String, default="default")
     provider_account_id = Column(String, nullable=True)
+    allow_provider_failover = Column(Boolean, default=False)
     status = Column(String, default="created")
     tool_calls_count = Column(Integer, default=0)
     total_cost_usd = Column(Float, default=0.0)
@@ -270,6 +271,7 @@ async def init_db():
             existing = {row[1] for row in result.fetchall()}
             additions = {
                 "provider_account_id": "TEXT",
+                "allow_provider_failover": "BOOLEAN DEFAULT 0",
                 "enabled_tools_json": "TEXT DEFAULT '[]'",
                 "granted_folders_json": "TEXT DEFAULT '[]'",
                 "max_steps": "INTEGER DEFAULT 30",

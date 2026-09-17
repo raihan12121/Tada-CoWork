@@ -12,7 +12,7 @@ import {
 import type { ProviderAccount } from '../services/api';
 
 interface TaskIntakeProps {
-  onSubmitTask: (task: string, files: File[], providerAccountId?: string) => void;
+  onSubmitTask: (task: string, files: File[], providerAccountId?: string, allowProviderFailover?: boolean) => void;
   isLoading: boolean;
   providerAccounts: ProviderAccount[];
 }
@@ -21,6 +21,7 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading,
   const [taskInput, setTaskInput] = useState('');
   const [inputFiles, setInputFiles] = useState<File[]>([]);
   const [providerAccountId, setProviderAccountId] = useState('');
+  const [allowProviderFailover, setAllowProviderFailover] = useState(false);
 
   const templates = [
     {
@@ -53,7 +54,7 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskInput.trim() || isLoading) return;
-    onSubmitTask(taskInput.trim(), inputFiles, providerAccountId || undefined);
+    onSubmitTask(taskInput.trim(), inputFiles, providerAccountId || undefined, allowProviderFailover);
   };
 
   return (
@@ -97,6 +98,7 @@ export const TaskIntake: React.FC<TaskIntakeProps> = ({ onSubmitTask, isLoading,
               <option value="">Use active AI account</option>
               {providerAccounts.filter(a => a.configured && a.status !== 'quota_exhausted').map(account => <option key={account.id} value={account.id}>{account.label} · {account.provider}</option>)}
             </select>
+            <label className="text-[11px] text-gray-400 flex items-center gap-1 mr-2" title="Only switches to another saved account of the same provider after a quota or rate-limit error."><input type="checkbox" checked={allowProviderFailover} onChange={(e) => setAllowProviderFailover(e.target.checked)} disabled={isLoading || !providerAccountId} /> Allow same-provider fallback</label>
             <button
               type="submit"
               disabled={!taskInput.trim() || isLoading}

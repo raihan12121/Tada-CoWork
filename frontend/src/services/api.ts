@@ -22,11 +22,11 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promi
 
 export const api = {
   // Sessions
-  async createSession(task: string, workspaceId = 'default', providerAccountId?: string): Promise<Session> {
+  async createSession(task: string, workspaceId = 'default', providerAccountId?: string, allowProviderFailover = false): Promise<Session> {
     const res = await apiFetch(`${API_BASE}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, workspace_id: workspaceId, provider_account_id: providerAccountId || null })
+      body: JSON.stringify({ task, workspace_id: workspaceId, provider_account_id: providerAccountId || null, allow_provider_failover: allowProviderFailover })
     });
     if (!res.ok) throw new Error('Failed to create session');
     return res.json();

@@ -15,7 +15,7 @@ from app.memory.long_term_memory import long_term_memory
 from app.core.audit import audit_logger
 from app.core.org_policy import org_policy_manager
 from app.sandbox.process_sandbox import sandbox_manager
-from app.core.llm import get_llm_client_for_account
+from app.core.llm import get_llm_client_for_account, AccountFailoverLLMProvider, BaseLLMProvider
 from app.core.provider_accounts import load_account_secret
 
 class SessionManager:
@@ -24,6 +24,20 @@ class SessionManager:
         self._ws_subscribers: Dict[str, List[asyncio.Queue]] = {}
         self._background_tasks: Dict[str, asyncio.Task] = {}
         self.worker_id = f"worker-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+    async def _provider_client(self, account_id: Optional[str], workspace_id: str, allow_failover: bool = False) -> Optional[BaseLLMProvider]:
+        if not account_id:
+            return None
+        async with AsyncSessionLocal() as db:
+            account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == account_id, DBProviderAccount.workspace_id == workspace_id))).scalar_one_or_none()
+            if not account:
+                raise ValueError("Selected provider account was not found in this workspace")
+            rows = [account]
+            if allow_failover:
+                alternatives = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.workspace_id == workspace_id, DBProviderAccount.provider == account.provider, DBProviderAccount.id != account.id, DBProviderAccount.status == "active").order_by(DBProviderAccount.last_used_at))).scalars().all()
+                rows.extend(alternatives)
+        clients = [get_llm_client_for_account(row.provider, load_account_secret(row.id).get("secret", ""), row.endpoint or "", row.model or "") for row in rows]
+        return AccountFailoverLLMProvider(clients) if allow_failover and len(clients) > 1 else clients[0]
 
     async def recover_interrupted_sessions(self) -> int:
         """Safely mark in-flight work as paused after an orchestrator restart.
@@ -97,6 +111,7 @@ class SessionManager:
                 task=task_data.task,
                 workspace_id=task_data.workspace_id,
                 provider_account_id=task_data.provider_account_id,
+                allow_provider_failover=task_data.allow_provider_failover,
                 status="planning",
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
@@ -117,11 +132,13 @@ class SessionManager:
         )
 
         # Generate structured plan
+        provider_client = await self._provider_client(task_data.provider_account_id, task_data.workspace_id, task_data.allow_provider_failover)
         plan = await planner_engine.generate_initial_plan(
             session_id=session_id,
             task=task_data.task,
             memory_context=memory_context,
             provider_account_id=task_data.provider_account_id,
+            provider_client=provider_client,
         )
 
         # An empty allow-list means "tools required by this plan", never the
@@ -148,7 +165,8 @@ class SessionManager:
             id=session_id,
             task=task_data.task,
             workspace_id=task_data.workspace_id,
-            provider_account_id=task_data.provider_account_id,
+                provider_account_id=task_data.provider_account_id,
+                allow_provider_failover=task_data.allow_provider_failover,
             status="created",
             plan=plan,
             artifacts=[],
@@ -199,16 +217,7 @@ class SessionManager:
         if not claimed.rowcount:
             return
 
-        provider_client = None
-        if session.provider_account_id:
-            async with AsyncSessionLocal() as db:
-                account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == session.provider_account_id, DBProviderAccount.workspace_id == session.workspace_id))).scalar_one_or_none()
-            if not account:
-                raise ValueError("Selected provider account no longer exists")
-            if account.status == "quota_exhausted":
-                raise ValueError("Selected provider account is quota exhausted; choose another account")
-            secret = load_account_secret(account.id).get("secret", "")
-            provider_client = get_llm_client_for_account(account.provider, secret, account.endpoint or "", account.model or "")
+        provider_client = await self._provider_client(session.provider_account_id, session.workspace_id, session.allow_provider_failover)
 
         # Create executor instance
         executor = ExecutorSession(
@@ -445,6 +454,7 @@ class SessionManager:
                 task=db_sess.task,
                 workspace_id=db_sess.workspace_id,
                 provider_account_id=db_sess.provider_account_id,
+                allow_provider_failover=bool(db_sess.allow_provider_failover),
                 status=db_sess.status, # type: ignore
                 plan=plan_model,
                 artifacts=artifacts,

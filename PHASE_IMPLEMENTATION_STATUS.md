@@ -33,6 +33,7 @@ Implemented:
 - Claude subscription route: Coagent can invoke the user-authenticated official `claude -p` CLI in one-turn plan mode with JSON output. Coagent never reads Claude credentials; Claude Code owns subscription authentication, quota, refresh, and provider policy.
 - Gemini/API health route: Gemini API-key calls classify authentication failures and HTTP 429 quota/rate-limit responses, and saved accounts expose the resulting health state. Google-account Gemini CLI OAuth is not implemented because Google prohibits third-party OAuth piggybacking.
 - Task-level routing: sessions persist an optional provider-account ID, validate it against the workspace, use the selected account for planning and execution, reject accounts marked quota-exhausted, and expose account selection in the task composer.
+- Safe opt-in failover: task sessions can enable same-provider fallback; the router only advances after quota/rate-limit errors and never changes provider or API/subscription billing mode silently.
 - Hash-chained append-only audit log and DB tool-call records.
 
 Verified by the Phase 0 tests and the full regression suite.

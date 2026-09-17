@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.main import app
-from app.core.llm import OpenAICodexCLIProvider, AnthropicClaudeCLIProvider
+from app.core.llm import OpenAICodexCLIProvider, AnthropicClaudeCLIProvider, AccountFailoverLLMProvider, BaseLLMProvider
 
 
 @pytest.mark.asyncio
@@ -74,3 +74,21 @@ async def test_session_can_pin_an_explicit_provider_account():
         assert session.json()["provider_account_id"] == account_id
         removed = await client.delete(f"/v1/settings/accounts/{account_id}")
         assert removed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_failover_only_moves_on_quota_error():
+    class QuotaClient(BaseLLMProvider):
+        async def generate_plan(self, task, memory_context=""):
+            raise RuntimeError("quota exhausted (HTTP 429)")
+        async def reason_step(self, *args, **kwargs):
+            raise RuntimeError("quota exhausted")
+
+    class GoodClient(BaseLLMProvider):
+        async def generate_plan(self, task, memory_context=""):
+            return {"explanation": "fallback", "steps": []}
+        async def reason_step(self, *args, **kwargs):
+            return {"tool": "execute_code", "params": {}}
+
+    result = await AccountFailoverLLMProvider([QuotaClient(), GoodClient()]).generate_plan("test")
+    assert result["explanation"] == "fallback"

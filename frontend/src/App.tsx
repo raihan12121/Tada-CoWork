@@ -97,10 +97,10 @@ export const App: React.FC = () => {
     };
   }, [activeSessionId]);
 
-  const handleCreateSession = async (task: string, files: File[] = [], providerAccountId?: string) => {
+  const handleCreateSession = async (task: string, files: File[] = [], providerAccountId?: string, allowProviderFailover = false) => {
     setIsLoading(true);
     try {
-      const newSession = await api.createSession(task, 'default', providerAccountId);
+      const newSession = await api.createSession(task, 'default', providerAccountId, allowProviderFailover);
       for (const file of files) await api.uploadSessionInput(newSession.id, file);
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
