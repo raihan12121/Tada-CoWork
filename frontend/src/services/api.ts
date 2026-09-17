@@ -1,5 +1,12 @@
 import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel } from '../types';
 
+export type ProviderAccount = {
+  id: string; workspace_id: string; provider: string; label: string; auth_type: string;
+  model: string; endpoint: string; status: string; configured: boolean; active: boolean;
+  quota_status?: string | null; quota_remaining?: number | null; quota_reset_at?: string | null;
+  last_error?: string | null;
+};
+
 const API_BASE = '/v1';
 const BRIDGE_TOKEN = import.meta.env.VITE_BRIDGE_TOKEN || (import.meta.env.DEV ? 'dev-only-local-bridge-secret' : '');
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || (import.meta.env.DEV ? 'dev-only-local-bridge-secret' : '');
@@ -55,6 +62,35 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/settings/llm/test`, { method: 'POST' });
     if (!res.ok) throw new Error((await res.json()).detail || 'AI provider test failed');
     return res.json();
+  },
+
+  async listProviderAccounts(): Promise<ProviderAccount[]> {
+    const res = await apiFetch(`${API_BASE}/settings/accounts`);
+    if (!res.ok) throw new Error('Failed to load provider accounts');
+    return res.json();
+  },
+
+  async createProviderAccount(payload: { provider: string; label: string; auth_type: string; secret?: string; endpoint?: string; model?: string }): Promise<ProviderAccount> {
+    const res = await apiFetch(`${API_BASE}/settings/accounts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to add provider account');
+    return res.json();
+  },
+
+  async selectProviderAccount(id: string): Promise<ProviderAccount> {
+    const res = await apiFetch(`${API_BASE}/settings/accounts/${encodeURIComponent(id)}/select`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to select provider account');
+    return res.json();
+  },
+
+  async testProviderAccount(id: string): Promise<{ success: boolean; provider: string; model: string }> {
+    const res = await apiFetch(`${API_BASE}/settings/accounts/${encodeURIComponent(id)}/test`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Provider account test failed');
+    return res.json();
+  },
+
+  async deleteProviderAccount(id: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/settings/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to remove provider account');
   },
 
   async getSessionEvents(id: string): Promise<ActivityEvent[]> {

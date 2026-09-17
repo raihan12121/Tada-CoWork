@@ -22,7 +22,7 @@ async def update_llm_settings(request: Request):
     require_workspace_access(_principal(request), "default")
     payload = await request.json()
     provider = str(payload.get("provider", "")).strip().lower()
-    if provider not in {"openai", "anthropic", "gemini", "ollama", "lm_studio", "offline_heuristic"}:
+    if provider not in {"openai", "openai_codex", "anthropic", "gemini", "ollama", "lm_studio", "offline_heuristic"}:
         raise HTTPException(status_code=400, detail="Unsupported provider")
     api_key = str(payload.get("api_key", ""))
     endpoint = str(payload.get("endpoint", ""))

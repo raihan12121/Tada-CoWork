@@ -9,7 +9,10 @@ backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
 from app.db.session import init_db
+from app.core.llm import configure_runtime_provider
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():
     await init_db()
+    # Tests must not inherit a developer's persisted desktop provider/account.
+    configure_runtime_provider("offline_heuristic")

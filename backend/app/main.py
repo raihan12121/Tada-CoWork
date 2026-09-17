@@ -14,6 +14,7 @@ from app.api.admin import router as admin_router
 from app.api.bridge import router as bridge_router
 from app.api.mcp import router as mcp_router
 from app.api.settings_api import router as settings_router
+from app.api.provider_accounts import router as provider_accounts_router
 from app.engine.scheduler import scheduler_engine
 from app.db.session import AsyncSessionLocal, DBOrganization
 from sqlalchemy import select
@@ -151,6 +152,7 @@ app.include_router(admin_router, prefix=settings.API_V1_STR)
 app.include_router(bridge_router, prefix=settings.API_V1_STR)
 app.include_router(mcp_router, prefix=settings.API_V1_STR)
 app.include_router(settings_router, prefix=settings.API_V1_STR)
+app.include_router(provider_accounts_router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

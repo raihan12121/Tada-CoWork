@@ -212,6 +212,31 @@ class DBConnectorReview(Base):
     scan_status = Column(String, default="not_submitted")
     scan_report_json = Column(Text, default="{}")
 
+class DBProviderAccount(Base):
+    """User-owned AI provider account metadata.
+
+    Secrets are deliberately kept outside SQLite in a DPAPI-protected file;
+    this table only contains non-sensitive metadata and a secret reference.
+    """
+    __tablename__ = "provider_accounts"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, default="default")
+    provider = Column(String, nullable=False)
+    label = Column(String, nullable=False)
+    auth_type = Column(String, nullable=False, default="api_key")
+    model = Column(String, nullable=True)
+    endpoint = Column(String, nullable=True)
+    secret_ref = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    quota_status = Column(String, nullable=True)
+    quota_remaining = Column(Float, nullable=True)
+    quota_reset_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
 class DBActivityEvent(Base):
     __tablename__ = "activity_events"
 

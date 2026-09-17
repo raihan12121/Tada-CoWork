@@ -1,6 +1,8 @@
 import os
 import json
 import uuid
+import asyncio
+import shutil
 from typing import Dict, Any, List, Optional
 import httpx
 from app.config import settings
@@ -120,6 +122,57 @@ class OpenAILLMProvider(BaseLLMProvider):
             json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available}),
         )
         return data or OfflineHeuristicProvider().reason_step_sync(task, step, prior_observations, tools_available)
+
+
+class OpenAICodexCLIProvider(BaseLLMProvider):
+    """Use the official Codex CLI login without reading its credentials."""
+    def __init__(self, command: str = ""):
+        self.command = command or os.getenv("COAGENT_CODEX_COMMAND", "") or shutil.which("codex") or "codex"
+
+    async def _run(self, prompt: str) -> str:
+        args = [self.command, "exec", "--ephemeral", "--json", "--skip-git-repo-check", "-s", "read-only", "-a", "never", prompt]
+        try:
+            process = await asyncio.create_subprocess_exec(*args, cwd=str(settings.BASE_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+        except FileNotFoundError as exc:
+            raise RuntimeError("Codex CLI was not found. Install Codex and sign in with ChatGPT first.") from exc
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.communicate()
+            raise RuntimeError("Codex CLI request timed out") from exc
+        if process.returncode != 0:
+            detail = stderr.decode("utf-8", errors="replace").strip()[-1000:]
+            raise RuntimeError(detail or f"Codex CLI exited with code {process.returncode}")
+        messages = []
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            item = event.get("item") if isinstance(event, dict) else None
+            if isinstance(item, dict) and item.get("type") in {"agent_message", "assistant_message"} and item.get("text"):
+                messages.append(str(item["text"]))
+            elif isinstance(event, dict) and event.get("type") == "message" and event.get("text"):
+                messages.append(str(event["text"]))
+        if messages:
+            return messages[-1]
+        raise RuntimeError("Codex CLI returned no assistant message")
+
+    async def _json_call(self, prompt: str) -> Dict[str, Any]:
+        text = await self._run(prompt)
+        start, end = text.find("{"), text.rfind("}") + 1
+        if start < 0 or end <= start:
+            raise RuntimeError("Codex CLI returned non-JSON output")
+        try:
+            return json.loads(text[start:end])
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Codex CLI returned invalid JSON") from exc
+
+    async def generate_plan(self, task: str, memory_context: str = "") -> Dict[str, Any]:
+        return await self._json_call("Return ONLY valid JSON with keys explanation and steps. Each step must contain description, tool, risk_level, dependencies. " + f"Task: {task}\nMemory context: {memory_context}")
+
+    async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
+        return await self._json_call("Return ONLY valid JSON with keys thought, narration, tool, params. Choose only an available tool. " + json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available}))
 
 
 class GeminiLLMProvider(OpenAILLMProvider):
@@ -435,9 +488,9 @@ if _saved:
         _runtime_provider = {}
 
 
-def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str = "", model: str = "") -> None:
+def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str = "", model: str = "", account_id: str = "") -> None:
     global _runtime_provider
-    _runtime_provider = {"provider": provider, "api_key": api_key, "endpoint": endpoint, "model": model}
+    _runtime_provider = {"provider": provider, "api_key": api_key, "endpoint": endpoint, "model": model, "account_id": account_id}
     if provider == "offline_heuristic":
         delete_secret(_provider_store)
     else:
@@ -447,8 +500,28 @@ def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str =
 def current_provider_config() -> Dict[str, Any]:
     provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
     key = _runtime_provider.get("api_key", "")
-    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"ollama", "lm_studio"}
-    return {"provider": provider, "model": _runtime_provider.get("model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "configured": configured}
+    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"openai_codex", "ollama", "lm_studio"}
+    return {"provider": provider, "model": _runtime_provider.get("model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "configured": configured, "account_id": _runtime_provider.get("account_id") or None}
+
+
+def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str = "", model: str = "") -> BaseLLMProvider:
+    """Construct a provider client from an explicitly selected account."""
+    if provider == "openai_codex":
+        return OpenAICodexCLIProvider()
+    if provider == "openai" and api_key:
+        client = OpenAILLMProvider(api_key)
+        if model:
+            client.model = model
+        return client
+    if provider == "gemini" and api_key:
+        return GeminiLLMProvider(api_key)
+    if provider == "anthropic" and api_key:
+        return AnthropicLLMProvider(api_key)
+    if provider in {"ollama", "lm_studio"}:
+        resolved_endpoint = endpoint or ("http://127.0.0.1:11434/v1" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        resolved_model = model or ("llama3.2" if provider == "ollama" else "local-model")
+        return OpenAICompatibleLLMProvider(resolved_endpoint, resolved_model, api_key)
+    return OfflineHeuristicProvider()
 
 
 def get_llm_client() -> BaseLLMProvider:
@@ -458,12 +531,14 @@ def get_llm_client() -> BaseLLMProvider:
         "anthropic": settings.ANTHROPIC_API_KEY,
         "gemini": settings.GEMINI_API_KEY,
     }.get(provider, "")
+    if provider == "openai_codex":
+        return OpenAICodexCLIProvider()
     if provider == "openai" and api_key:
-        return OpenAILLMProvider(api_key)
+        return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
     if provider == "gemini" and api_key:
-        return GeminiLLMProvider(api_key)
+        return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
     if provider == "anthropic" and api_key:
-        return AnthropicLLMProvider(api_key)
+        return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
     if provider in {"ollama", "lm_studio"}:
         endpoint = _runtime_provider.get("endpoint") or ("http://127.0.0.1:11434/v1" if provider == "ollama" else "http://127.0.0.1:1234/v1")
         model = _runtime_provider.get("model") or ("llama3.2" if provider == "ollama" else "local-model")
