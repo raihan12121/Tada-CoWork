@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "dist_pc" / "Coagent"
 INSTALLER_DIR = BASE_DIR / "installer"
 OUTPUT_DIR = BASE_DIR / "dist_installer"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 
 INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
