@@ -105,6 +105,32 @@ export const api = {
     return res.json();
   },
 
+  async getPlanTierStatus(workspaceId = 'default'): Promise<{
+    workspace_id: string;
+    plan_tier: string;
+    tier_name: string;
+    monthly_task_limit: number;
+    tasks_used_this_month: number;
+    tasks_remaining: number;
+    quota_exhausted: boolean;
+    quota_reset_at: string;
+    max_steps_per_task: number;
+    max_tool_calls_per_task: number;
+    available_tiers: Array<{ tier: string; name: string; limit: number; price_usd: number }>;
+  }> {
+    const res = await apiFetch(`${API_BASE}/sessions/plan-tier/status?workspace_id=${encodeURIComponent(workspaceId)}`);
+    if (!res.ok) throw new Error('Failed to fetch plan tier status');
+    return res.json();
+  },
+
+  async updatePlanTier(tier: string, workspaceId = 'default'): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/sessions/plan-tier/update?tier=${encodeURIComponent(tier)}&workspace_id=${encodeURIComponent(workspaceId)}`, {
+      method: 'PUT'
+    });
+    if (!res.ok) throw new Error('Failed to update plan tier');
+    return res.json();
+  },
+
   async editPlan(id: string, payload: {
     action: 'add' | 'remove' | 'reorder';
     step_id?: string;
@@ -178,7 +204,7 @@ export const api = {
   },
 
   // Artifacts
-  async previewArtifact(sessionId: string, filename: string): Promise<{ filename: string; type: string; content: string }> {
+  async previewArtifact(sessionId: string, filename: string): Promise<import('../types').ArtifactPreviewData> {
     const res = await apiFetch(`${API_BASE}/artifacts/preview/${sessionId}/${encodeURIComponent(filename)}`);
     if (!res.ok) throw new Error('Failed to preview artifact');
     return res.json();

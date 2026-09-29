@@ -123,3 +123,17 @@ export interface BridgeStatus {
   granted_folders: string[];
   allow_browser_control: boolean;
 }
+
+export interface ArtifactPreviewData {
+  filename: string;
+  type: string;
+  content: string;
+  rows?: string[][];
+  headers?: string[];
+  sheets?: Array<{ name: string; rows: string[][] }>;
+  sections?: Array<{ text: string; is_heading: boolean; style?: string }>;
+  tables?: string[][][];
+  slides?: Array<{ index: number; title: string; content: string[] }>;
+  download_url?: string;
+  file_size_bytes?: number;
+}

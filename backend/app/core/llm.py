@@ -75,7 +75,7 @@ class AnthropicLLMProvider(BaseLLMProvider):
             "You are the Coagent Planner. Deconstruct the user task into a structured plan graph. "
             "Return JSON with keys: explanation, steps: [{description, tool, risk_level, dependencies}]. "
             "Tools available: execute_code, create_file, write_file, edit_file, delete_file, read_file, "
-            "list_files, bridge_list_files, bridge_read_file, bridge_move_file, create_document, web_search, web_fetch, browser_automation, google_drive, gmail, outlook, github, slack, webhook. "
+            "list_files, bridge_list_files, bridge_read_file, bridge_move_file, create_document, ocr_extract, web_search, web_fetch, browser_automation, google_drive, gmail, outlook, github, slack, webhook. "
             "Risk levels: low (read-only/search), medium (file create/write/code exec), high (delete/external send)."
         )
         prompt = f"Task: {task}\nMemory Context:\n{memory_context}"
@@ -493,6 +493,9 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         elif tool == "read_file":
             params = {"path": "input_data.json"}
             narration = "Reading input data files..."
+        elif tool == "ocr_extract":
+            params = {"path": "inputs", "confidence_threshold": 0.8}
+            narration = "Extracting and normalizing receipt expenses and confidence scores..."
         elif tool == "list_files":
             params = {"path": "."}
             narration = "Scanning and indexing directory..."

@@ -26,6 +26,15 @@ class BrowserAutomationTool(BaseTool):
         action = kwargs.get("action", "")
         if action not in {"navigate", "click", "type", "screenshot", "takeover"}:
             return {"success": False, "error": f"Unsupported browser action: {action}"}
+        if action == "takeover":
+            target_url = kwargs.get("url") or "https://example.com/checkout"
+            return {
+                "success": True,
+                "status": "takeover_required",
+                "takeover_mode": True,
+                "url": target_url,
+                "message": f"Sensitive browser step at {target_url} requires human takeover. Control handed back to user."
+            }
         if not settings.BRIDGE_AGENT_URL:
             return {"success": False, "status": "bridge_offline", "error": "Browser bridge is not configured; no browser action was performed."}
         try:

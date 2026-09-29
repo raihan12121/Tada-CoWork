@@ -12,6 +12,7 @@ from app.connectors.google_drive import GoogleDriveConnector
 from app.connectors.github import GitHubConnector
 from app.connectors.slack import SlackConnector, WebhookConnector
 from app.connectors.email import GmailConnector, OutlookConnector
+from app.tools.ocr_extract import OCRExtractTool
 
 class ToolRegistry:
     def __init__(self):
@@ -42,6 +43,7 @@ class ToolRegistry:
             WebhookConnector()
             ,GmailConnector()
             ,OutlookConnector()
+            ,OCRExtractTool()
         ]
         for t in default_tools:
             self.register_tool(t)

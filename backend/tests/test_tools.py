@@ -121,3 +121,20 @@ async def test_web_search_tool():
         return
     assert result["results_count"] > 0
     assert "BEGIN UNTRUSTED DATA" in result["sanitized_view"]
+
+
+@pytest.mark.asyncio
+async def test_ocr_extract_tool():
+    from app.tools.ocr_extract import OCRExtractTool
+    tool = OCRExtractTool()
+    session_id = "test_ocr_session"
+    res = await tool.execute(session_id=session_id)
+    assert res["success"] is True
+    assert res["total_receipts"] >= 5
+    assert res["parsed_count"] > 0
+    assert res["total_amount_usd"] > 0.0
+    # Verify uncertainty flagging works for unclear items
+    assert len(res["flagged_for_review"]) >= 1
+    flagged = res["flagged_for_review"][0]
+    assert flagged["uncertain"] is True
+    assert flagged["confidence"] < 0.8 or flagged["total"] == 0.0

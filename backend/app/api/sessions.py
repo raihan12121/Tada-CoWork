@@ -41,6 +41,19 @@ async def list_sessions(request: Request, limit: int = Query(20, ge=1, le=100)):
     sessions = await session_manager.list_sessions(limit)
     return [session for session in sessions if principal.can_access_workspace(session.workspace_id)]
 
+@router.get("/plan-tier/status")
+async def get_plan_tier_status(request: Request, workspace_id: str = Query("default")):
+    from app.core.plan_tier import plan_tier_manager
+    return await plan_tier_manager.get_tier_details(workspace_id)
+
+@router.put("/plan-tier/update")
+async def update_plan_tier(request: Request, tier: str = Query(...), workspace_id: str = Query("default")):
+    from app.core.plan_tier import plan_tier_manager
+    try:
+        return await plan_tier_manager.set_tier(tier, workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 @router.get("/{session_id}", response_model=SessionModel)
 async def get_session(request: Request, session_id: str):
     session = await session_manager.get_session(session_id)

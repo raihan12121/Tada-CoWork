@@ -17,6 +17,7 @@ from app.core.org_policy import org_policy_manager
 from app.sandbox.process_sandbox import sandbox_manager
 from app.core.llm import get_llm_client_for_account, AccountFailoverLLMProvider, BaseLLMProvider
 from app.core.provider_accounts import load_account_secret
+from app.core.plan_tier import plan_tier_manager
 
 class SessionManager:
     def __init__(self):
@@ -87,6 +88,7 @@ class SessionManager:
 
     async def create_session(self, task_data: SessionCreate) -> SessionModel:
         org_policy_manager.assert_data_region_available(task_data.workspace_id)
+        await plan_tier_manager.check_quota(task_data.workspace_id)
         session_id = str(uuid.uuid4())
 
         if task_data.provider_account_id:

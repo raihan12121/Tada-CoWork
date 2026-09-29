@@ -29,7 +29,8 @@ LOW_RISK_TOOLS = {
     "web_fetch",
     "take_screenshot",
     "query_memory",
-    "summarize_data"
+    "summarize_data",
+    "ocr_extract"
 }
 
 INJECTION_PATTERNS = [

@@ -57,12 +57,103 @@ async def preview_artifact(request: Request, session_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Artifact file not found")
         
     ext = file_path.suffix.lower()
-    if ext in (".md", ".txt", ".csv", ".json"):
-        text = file_path.read_text(encoding="utf-8", errors="replace")
-        return {"filename": safe_name, "type": ext[1:], "content": text}
-    else:
+    try:
+        if ext in (".md", ".txt", ".json", ".py", ".js", ".html", ".log"):
+            text = file_path.read_text(encoding="utf-8", errors="replace")
+            return {"filename": safe_name, "type": ext[1:], "content": text}
+        elif ext == ".csv":
+            import csv
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                reader = csv.reader(f)
+                rows = [row for i, row in enumerate(reader) if i < 100]
+            text = file_path.read_text(encoding="utf-8", errors="replace")[:10000]
+            return {"filename": safe_name, "type": "csv", "rows": rows, "content": text}
+        elif ext == ".xlsx":
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            sheets_data = []
+            for sheet_name in wb.sheetnames[:5]:
+                ws = wb[sheet_name]
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    if any(cell is not None for cell in row):
+                        rows.append([str(c) if c is not None else "" for c in row[:25]])
+                    if len(rows) >= 100:
+                        break
+                sheets_data.append({"name": sheet_name, "rows": rows})
+            return {
+                "filename": safe_name,
+                "type": "xlsx",
+                "sheets": sheets_data,
+                "content": f"Spreadsheet with {len(wb.sheetnames)} sheet(s)."
+            }
+        elif ext == ".docx":
+            import docx
+            doc = docx.Document(file_path)
+            sections = []
+            for p in doc.paragraphs:
+                text = p.text.strip()
+                if text:
+                    style = p.style.name if p.style else ""
+                    sections.append({"text": text, "is_heading": "heading" in style.lower(), "style": style})
+            tables_data = []
+            for t in doc.tables[:5]:
+                t_rows = []
+                for row in t.rows[:25]:
+                    t_rows.append([c.text.strip() for c in row.cells])
+                tables_data.append(t_rows)
+            return {
+                "filename": safe_name,
+                "type": "docx",
+                "sections": sections[:60],
+                "tables": tables_data,
+                "content": "\n\n".join(s["text"] for s in sections[:40])
+            }
+        elif ext == ".pptx":
+            from pptx import Presentation
+            prs = Presentation(file_path)
+            slides_data = []
+            for i, slide in enumerate(prs.slides, 1):
+                if i > 15:
+                    break
+                title = slide.shapes.title.text if slide.shapes.title else f"Slide {i}"
+                bullets = []
+                for shape in slide.shapes:
+                    if shape.has_text_frame and shape != slide.shapes.title:
+                        for p in shape.text_frame.paragraphs:
+                            if p.text.strip():
+                                bullets.append(p.text.strip())
+                slides_data.append({"index": i, "title": title, "content": bullets})
+            return {
+                "filename": safe_name,
+                "type": "pptx",
+                "slides": slides_data,
+                "content": "\n".join(f"Slide {s['index']}: {s['title']}\n" + "\n".join(f" - {b}" for b in s['content']) for s in slides_data)
+            }
+        elif ext in (".png", ".jpg", ".jpeg", ".webp", ".svg", ".gif"):
+            return {
+                "filename": safe_name,
+                "type": "image",
+                "download_url": f"/v1/artifacts/download/{session_id}/{safe_name}",
+                "content": f"[Image deliverable: {safe_name}]"
+            }
+        elif ext == ".pdf":
+            return {
+                "filename": safe_name,
+                "type": "pdf",
+                "file_size_bytes": file_path.stat().st_size,
+                "download_url": f"/v1/artifacts/download/{session_id}/{safe_name}",
+                "content": f"[PDF Document ({file_path.stat().st_size / 1024:.1f} KB)]"
+            }
+        else:
+            return {
+                "filename": safe_name,
+                "type": ext[1:],
+                "content": f"[Binary deliverable: {ext.upper()} document ({file_path.stat().st_size} bytes). Click Download to open.]"
+            }
+    except Exception as exc:
         return {
             "filename": safe_name,
             "type": ext[1:],
-            "content": f"[Binary deliverable: {ext.upper()} document ({file_path.stat().st_size} bytes). Click Download to open.]"
+            "content": f"Preview parsing failed: {exc}. Please click Download to open the deliverable."
         }

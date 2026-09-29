@@ -62,7 +62,11 @@ hiddenimports = [
     "reportlab.lib",
     "reportlab.pdfgen",
     "httpx",
-    "email_validator"
+    "email_validator",
+    "dotenv",
+    "PIL",
+    "PIL.Image",
+    "multipart"
 ]
 
 a = Analysis(
