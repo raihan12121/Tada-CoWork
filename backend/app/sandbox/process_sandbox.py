@@ -14,7 +14,7 @@ import re
 SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 class SandboxSession:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, workspace_id: str = "default"):
         if not session_id or not SESSION_ID_PATTERN.match(session_id):
             raise ValueError(f"Invalid session_id '{session_id}': must be non-empty and contain only alphanumeric, dash, and underscore characters.")
 
@@ -28,15 +28,23 @@ class SandboxSession:
             raise ValueError(f"Security error: Session path '{target_dir}' traverses outside sandbox root.")
 
         self.session_id = session_id
+        self.workspace_id = workspace_id
         self.sandbox_dir = target_dir
         self.trash_dir = self.sandbox_dir / ".trash"
         self.versions_dir = self.sandbox_dir / ".versions"
         self.artifacts_dir = self.sandbox_dir / "artifacts"
         
+        # Persistent workspace environment (GrokBot persistent workspace model)
+        safe_ws = "".join(c for c in workspace_id if c.isalnum() or c in ("-", "_")).strip() or "default"
+        self.workspace_dir = (settings.DATA_DIR / "workspaces" / safe_ws).resolve()
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        
         self.sandbox_dir.mkdir(parents=True, exist_ok=True)
         self.trash_dir.mkdir(parents=True, exist_ok=True)
         self.versions_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self._cached_disk_usage: Optional[int] = None
+        self._disk_usage_last_check: float = 0.0
 
     def disk_usage_bytes(self) -> int:
         """Return the total regular-file footprint of this session sandbox."""
@@ -59,10 +67,21 @@ class SandboxSession:
 
     def resolve_path(self, relative_path: str) -> Path:
         """
-        Guarantees path cannot escape the sandbox root (prevents path traversal ../).
+        Guarantees path cannot escape the sandbox root or persistent workspace boundary (prevents path traversal ../).
+        Paths starting with 'workspace/' or '@workspace/' target persistent workspace storage.
         """
         # Clean relative path
         norm_path = os.path.normpath(relative_path).lstrip("/\\")
+
+        if norm_path.startswith("workspace" + os.sep) or norm_path == "workspace" or norm_path.startswith("@workspace"):
+            rel_ws = norm_path.removeprefix("@workspace").removeprefix("workspace").lstrip("/\\")
+            full_path = (self.workspace_dir / rel_ws).resolve()
+            try:
+                full_path.relative_to(self.workspace_dir.resolve())
+            except ValueError:
+                raise PermissionError(f"Access denied: Path '{relative_path}' attempts to traverse outside workspace boundary.")
+            return full_path
+
         full_path = (self.sandbox_dir / norm_path).resolve()
         
         # Verify it stays strictly inside sandbox_dir
@@ -329,7 +348,7 @@ class SandboxManager:
     def __init__(self):
         self._sandboxes: Dict[str, SandboxSession] = {}
 
-    def get_or_create(self, session_id: str) -> SandboxSession:
+    def get_or_create(self, session_id: str, workspace_id: str = "default") -> SandboxSession:
         if session_id not in self._sandboxes:
             if settings.APP_ENV.lower() == "production" and settings.SANDBOX_BACKEND.lower() == "local":
                 raise RuntimeError(
@@ -346,7 +365,7 @@ class SandboxManager:
                     raise RuntimeError("Managed sandbox adapter requires COAGENT_MANAGED_SANDBOX_TOKEN in production.")
                 self._sandboxes[session_id] = ManagedSandboxSession(session_id)
             else:
-                self._sandboxes[session_id] = SandboxSession(session_id)
+                self._sandboxes[session_id] = SandboxSession(session_id, workspace_id=workspace_id)
         return self._sandboxes[session_id]
 
     def get_existing(self, session_id: str) -> Optional[SandboxSession]:

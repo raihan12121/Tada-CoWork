@@ -97,8 +97,17 @@ class LocalBridgeAgent:
         try:
             if self._playwright is None:
                 self._playwright = sync_playwright().start()
-                self._browser = self._playwright.chromium.launch(headless=False)
-                self._page = self._browser.new_page()
+                profile_dir = Path.home() / ".coagent" / "browser_profile"
+                profile_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    self._browser_context = self._playwright.chromium.launch_persistent_context(
+                        user_data_dir=str(profile_dir),
+                        headless=False
+                    )
+                    self._page = self._browser_context.pages[0] if self._browser_context.pages else self._browser_context.new_page()
+                except Exception:
+                    self._browser = self._playwright.chromium.launch(headless=False)
+                    self._page = self._browser.new_page()
             page = self._page
             if action == "navigate":
                 page.goto(payload.get("url", ""), wait_until="domcontentloaded")
@@ -112,6 +121,12 @@ class LocalBridgeAgent:
             if action == "screenshot":
                 page.screenshot(path="coagent-screenshot.png", type="png")
                 return {"success": True, "status": "screenshot", "path": "coagent-screenshot.png", "url": page.url}
+            if action == "content":
+                return {"success": True, "status": "content", "url": page.url, "content": page.content()[:20000]}
+            if action == "evaluate":
+                expr = payload.get("text") or payload.get("expression") or "document.title"
+                val = page.evaluate(expr)
+                return {"success": True, "status": "evaluated", "result": val}
             return {"success": False, "error": f"Unsupported browser action: {action}"}
         except Exception as exc:
             return {"success": False, "status": "browser_error", "error": str(exc)}
