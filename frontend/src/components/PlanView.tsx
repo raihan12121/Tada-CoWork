@@ -11,10 +11,13 @@ import {
   ArrowDown,
   Wrench, 
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  BookmarkPlus,
+  Check
 } from 'lucide-react';
 import type { Plan, RiskLevel } from '../types';
 import { ParallelSwimlanes } from './ParallelSwimlanes';
+import { api } from '../services/api';
 
 interface PlanViewProps {
   plan: Plan;
@@ -37,6 +40,14 @@ export const PlanView: React.FC<PlanViewProps> = ({
   const [newTool, setNewTool] = useState('execute_code');
   const [newRisk, setNewRisk] = useState<RiskLevel>('low');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Teach by Demonstration: Save as Skill
+  const [showSaveSkillModal, setShowSaveSkillModal] = useState(false);
+  const [skillName, setSkillName] = useState('');
+  const [skillDesc, setSkillDesc] = useState('');
+  const [isSavingSkill, setIsSavingSkill] = useState(false);
+  const [skillSavedSuccess, setSkillSavedSuccess] = useState(false);
+
 
   const getRiskBadge = (risk: RiskLevel) => {
     switch (risk) {
@@ -98,6 +109,22 @@ export const PlanView: React.FC<PlanViewProps> = ({
     onReorderSteps(next.map((step) => step.id));
   };
 
+  const handleSaveAsSkill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!skillName.trim() || !plan.session_id) return;
+    try {
+      setIsSavingSkill(true);
+      await api.createSkillFromSession(plan.session_id, skillName.trim(), skillDesc.trim());
+      setSkillSavedSuccess(true);
+      setShowSaveSkillModal(false);
+      setTimeout(() => setSkillSavedSuccess(false), 4000);
+    } catch (err) {
+      console.error('Failed to save skill:', err);
+    } finally {
+      setIsSavingSkill(false);
+    }
+  };
+
   return (
     <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 shadow-lg mb-6">
       {/* Plan Header */}
@@ -109,6 +136,12 @@ export const PlanView: React.FC<PlanViewProps> = ({
               v{plan.version}
             </span>
             <span className="text-xs text-gray-400">· {plan.steps.length} steps</span>
+            {skillSavedSuccess && (
+              <span className="inline-flex items-center space-x-1 bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded font-medium">
+                <Check className="w-3 h-3" />
+                <span>Saved as Skill!</span>
+              </span>
+            )}
           </div>
           {plan.explanation && (
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
@@ -117,15 +150,31 @@ export const PlanView: React.FC<PlanViewProps> = ({
           )}
         </div>
 
-        {canEdit && (
-          <button
-            onClick={onStartExecution}
-            className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow-md transition"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Start Execution</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2">
+          {plan.steps.length > 0 && (
+            <button
+              onClick={() => {
+                setSkillName(plan.explanation ? plan.explanation.slice(0, 40) : 'Custom Skill');
+                setShowSaveSkillModal(true);
+              }}
+              className="inline-flex items-center space-x-1.5 bg-[#21262d] hover:bg-[#30363d] border border-white/10 text-gray-200 text-xs font-medium py-2 px-3 rounded-lg shadow-sm transition"
+              title="Save this plan as a reusable skill"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Save as Skill</span>
+            </button>
+          )}
+
+          {canEdit && (
+            <button
+              onClick={onStartExecution}
+              className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow-md transition"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Start Execution</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Reassurance Line (design.md §2.2) */}
@@ -265,6 +314,63 @@ export const PlanView: React.FC<PlanViewProps> = ({
           )}
         </div>
       )}
+
+      {/* Save as Skill Modal */}
+      {showSaveSkillModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-md w-full p-5 shadow-2xl">
+            <div className="flex items-center space-x-2 text-indigo-400 mb-2">
+              <BookmarkPlus className="w-5 h-5" />
+              <h3 className="text-sm font-semibold text-white">Save Plan as Reusable Skill</h3>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">
+              Turn this demonstrated task into an automated, parameterized skill that you or your agent swarm can trigger anytime.
+            </p>
+            <form onSubmit={handleSaveAsSkill} className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-300 block mb-1">Skill Name</label>
+                <input
+                  type="text"
+                  value={skillName}
+                  onChange={(e) => setSkillName(e.target.value)}
+                  placeholder="e.g. Weekly Research & Summary"
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-300 block mb-1">Description</label>
+                <textarea
+                  value={skillDesc}
+                  onChange={(e) => setSkillDesc(e.target.value)}
+                  placeholder="What this skill accomplishes..."
+                  rows={2}
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white resize-none focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#30363d]/60">
+                <button
+                  type="button"
+                  onClick={() => setShowSaveSkillModal(false)}
+                  className="text-xs text-gray-400 hover:text-white px-3 py-1.5"
+                  disabled={isSavingSkill}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSkill}
+                  className="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-1.5 rounded transition disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{isSavingSkill ? 'Saving...' : 'Save Skill'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

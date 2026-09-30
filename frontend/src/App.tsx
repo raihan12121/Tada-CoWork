@@ -10,6 +10,7 @@ import { ScheduleManager } from './components/ScheduleManager';
 import { BridgeManager } from './components/BridgeManager';
 import { AuditViewer } from './components/AuditViewer';
 import { ProviderSettings } from './components/ProviderSettings';
+import { SkillsManager } from './components/SkillsManager';
 import type { Session, ActivityEvent } from './types';
 import { api } from './services/api';
 import type { ProviderAccount } from './services/api';
@@ -207,6 +208,9 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-y-auto">
+        {currentTab === 'skills' && (
+          <SkillsManager onSessionCreated={handleSelectSession} />
+        )}
         {currentTab === 'memory' && <MemoryManager />}
         {currentTab === 'schedules' && (
           <ScheduleManager onSessionCreated={handleSelectSession} />

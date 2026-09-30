@@ -187,3 +187,26 @@ class SessionPermissionUpdate(BaseModel):
     action: Literal["grant", "revoke"]
     resource_type: Literal["tool", "folder", "scope", "domain"]
     value: str = Field(..., min_length=1)
+
+class SkillModel(BaseModel):
+    id: str
+    workspace_id: str = "default"
+    name: str
+    description: str
+    source_session_id: Optional[str] = None
+    parameters_schema: Dict[str, Any] = Field(default_factory=dict)
+    steps_definition: List[Dict[str, Any]] = Field(default_factory=list)
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+class SkillCreate(BaseModel):
+    name: str
+    description: str
+    workspace_id: str = "default"
+    parameters_schema: Dict[str, Any] = Field(default_factory=dict)
+    steps_definition: List[Dict[str, Any]] = Field(default_factory=list)
+
+class SkillRunRequest(BaseModel):
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    provider_account_id: Optional[str] = None

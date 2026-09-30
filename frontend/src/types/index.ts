@@ -137,3 +137,30 @@ export interface ArtifactPreviewData {
   download_url?: string;
   file_size_bytes?: number;
 }
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  parameters_schema: Record<string, any>;
+  steps_definition: Array<Record<string, any>>;
+  workspace_id?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillCreate {
+  name: string;
+  description: string;
+  parameters_schema?: Record<string, any>;
+  steps_definition: Array<Record<string, any>>;
+  workspace_id?: string;
+  is_active?: boolean;
+}
+
+export interface SkillRunRequest {
+  parameters?: Record<string, any>;
+  workspace_id?: string;
+}
+

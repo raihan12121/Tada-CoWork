@@ -1,4 +1,4 @@
-import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel } from '../types';
+import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate } from '../types';
 
 export type ProviderAccount = {
   id: string; workspace_id: string; provider: string; label: string; auth_type: string;
@@ -288,6 +288,55 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/schedules/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete schedule');
   },
+
+  // Skills Engine (GrokBot parity)
+  async listSkills(workspaceId = 'default'): Promise<Skill[]> {
+    const res = await apiFetch(`${API_BASE}/skills?workspace_id=${encodeURIComponent(workspaceId)}`);
+    if (!res.ok) throw new Error('Failed to list skills');
+    return res.json();
+  },
+
+  async getSkill(id: string): Promise<Skill> {
+    const res = await apiFetch(`${API_BASE}/skills/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Failed to fetch skill');
+    return res.json();
+  },
+
+  async createSkill(payload: SkillCreate): Promise<Skill> {
+    const res = await apiFetch(`${API_BASE}/skills`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to create skill');
+    return res.json();
+  },
+
+  async createSkillFromSession(sessionId: string, name: string, description: string, workspaceId = 'default'): Promise<Skill> {
+    const res = await apiFetch(`${API_BASE}/skills/from-session/${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description, workspace_id: workspaceId })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to save session as skill');
+    return res.json();
+  },
+
+  async runSkill(skillId: string, parameters: Record<string, any> = {}, workspaceId = 'default'): Promise<Session> {
+    const res = await apiFetch(`${API_BASE}/skills/${encodeURIComponent(skillId)}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parameters, workspace_id: workspaceId })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to execute skill');
+    return res.json();
+  },
+
+  async deleteSkill(id: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/skills/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete skill');
+  },
+
 
   // Bridge
   async getBridgeStatus(sessionId?: string): Promise<BridgeStatus> {

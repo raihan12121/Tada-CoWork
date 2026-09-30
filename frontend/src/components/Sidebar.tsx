@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Plus, BrainCircuit, CalendarClock, HardDrive, ShieldCheck, FolderOpen, Clock, Settings, ChevronRight, Zap } from 'lucide-react';
+import { Bot, Plus, BrainCircuit, CalendarClock, HardDrive, ShieldCheck, FolderOpen, Clock, Settings, ChevronRight, Zap, Sparkles } from 'lucide-react';
 import type { Session } from '../types';
 import { api } from '../services/api';
 
@@ -14,11 +14,13 @@ interface SidebarProps {
 
 const navItems = [
   { id: 'workspace', label: 'Workspace', icon: FolderOpen, color: 'text-indigo-300' },
+  { id: 'skills', label: 'Skills & Swarms', icon: Sparkles, color: 'text-fuchsia-300' },
   { id: 'memory', label: 'Memory', icon: BrainCircuit, color: 'text-violet-300' },
   { id: 'schedules', label: 'Scheduled jobs', icon: CalendarClock, color: 'text-amber-300' },
   { id: 'bridge', label: 'Local bridge', icon: HardDrive, color: 'text-emerald-300' },
   { id: 'audit', label: 'Safety & audit', icon: ShieldCheck, color: 'text-cyan-300' },
 ];
+
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, sessions, activeSessionId, onSelectSession, onNewSession }) => {
   const [planTier, setPlanTier] = useState<any>(null);
