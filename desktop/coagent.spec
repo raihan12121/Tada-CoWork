@@ -71,6 +71,8 @@ hiddenimports = [
     # Skills, Swarm & MCP Modules
     "app.api.skills",
     "app.api.swarm",
+    "app.api.bots",
+    "app.api.channels",
     "app.mcp.mcp_manager",
     "app.skills.skill_manager",
     "app.tools.swarm_delegate"
