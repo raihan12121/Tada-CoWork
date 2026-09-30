@@ -12,7 +12,7 @@ import { AuditViewer } from './components/AuditViewer';
 import { ProviderSettings } from './components/ProviderSettings';
 import { SkillsManager } from './components/SkillsManager';
 import type { Session, ActivityEvent } from './types';
-import { api } from './services/api';
+import { api, getBackendBaseUrl } from './services/api';
 import type { ProviderAccount } from './services/api';
 
 export const App: React.FC = () => {
@@ -62,8 +62,17 @@ export const App: React.FC = () => {
       wsRef.current.close();
     }
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/v1/sessions/${activeSessionId}/stream`;
+    const backendBase = getBackendBaseUrl();
+    let wsHost = window.location.host;
+    let proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (backendBase) {
+      try {
+        const u = new URL(backendBase);
+        wsHost = u.host;
+        proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      } catch {}
+    }
+    const wsUrl = `${proto}//${wsHost}/v1/sessions/${activeSessionId}/stream`;
     
     try {
       const ws = new WebSocket(wsUrl);

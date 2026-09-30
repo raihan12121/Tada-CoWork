@@ -66,7 +66,14 @@ hiddenimports = [
     "dotenv",
     "PIL",
     "PIL.Image",
-    "multipart"
+    "multipart",
+
+    # Skills, Swarm & MCP Modules
+    "app.api.skills",
+    "app.api.swarm",
+    "app.mcp.mcp_manager",
+    "app.skills.skill_manager",
+    "app.tools.swarm_delegate"
 ]
 
 a = Analysis(

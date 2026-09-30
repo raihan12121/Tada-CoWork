@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate, McpServer, McpServerCreate, SwarmRunRequest, SwarmRunResponse } from '../types';
 
 export type ProviderAccount = {
@@ -6,6 +7,23 @@ export type ProviderAccount = {
   quota_status?: string | null; quota_remaining?: number | null; quota_reset_at?: string | null;
   last_error?: string | null;
 };
+
+export function getBackendBaseUrl(): string {
+  const customHost = localStorage.getItem('coagent_server_url');
+  if (customHost) return customHost.replace(/\/$/, '');
+  if (Capacitor.isNativePlatform()) {
+    return 'http://192.168.0.104:8000';
+  }
+  return '';
+}
+
+export function setBackendBaseUrl(url: string) {
+  if (url) {
+    localStorage.setItem('coagent_server_url', url);
+  } else {
+    localStorage.removeItem('coagent_server_url');
+  }
+}
 
 const API_BASE = '/v1';
 const BRIDGE_TOKEN = import.meta.env.VITE_BRIDGE_TOKEN || (import.meta.env.DEV ? 'dev-only-local-bridge-secret' : '');
@@ -17,7 +35,13 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promi
   const headers = new Headers(init.headers);
   const bearerToken = IDENTITY_TOKEN || API_AUTH_TOKEN;
   if (bearerToken) headers.set('Authorization', `Bearer ${bearerToken}`);
-  return fetch(input, { ...init, headers });
+
+  let target = input;
+  const backendBase = getBackendBaseUrl();
+  if (backendBase && typeof input === 'string' && input.startsWith('/v1')) {
+    target = `${backendBase}${input}`;
+  }
+  return fetch(target, { ...init, headers });
 }
 
 export const api = {

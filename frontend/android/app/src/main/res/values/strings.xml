@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tada CoWork</string>
+    <string name="title_activity_main">Tada CoWork</string>
+    <string name="package_name">com.omayk.cowork</string>
+    <string name="custom_url_scheme">com.omayk.cowork</string>
+</resources>

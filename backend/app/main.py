@@ -169,6 +169,20 @@ async def health_check():
         "provider": settings.DEFAULT_PROVIDER
     }
 
+from fastapi.responses import FileResponse
+
+@app.get("/download/app.apk")
+async def download_apk():
+    apk_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    if not apk_path.exists():
+        return JSONResponse(status_code=404, content={"detail": "APK is currently building or not yet compiled."})
+    return FileResponse(
+        path=str(apk_path),
+        filename="TadaCoWork.apk",
+        media_type="application/vnd.android.package-archive"
+    )
+
+
 # Mount static frontend dist if available
 from pathlib import Path
 import sys

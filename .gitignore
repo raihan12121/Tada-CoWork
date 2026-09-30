@@ -65,6 +65,10 @@ installer/*.wxs
 *.wixobj
 *.wixpdb
 
-# Graphify Output
+# Android Local Artifacts
+**/local.properties
+.gradle/
+android/app/build/
+android/.gradle/
 graphify-out/
 
