@@ -22,8 +22,6 @@ export const MemoryManager: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
 
-
-
   useEffect(() => {
     let ignore = false;
     api.listMemories().then((items) => {
@@ -78,35 +76,35 @@ export const MemoryManager: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-6">
-      {/* Header with Title and Global Toggle */}
-      <div className="flex items-center justify-between pb-6 border-b border-[#30363d] mb-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between pb-6 border-b border-white/[0.08] mb-6 gap-3">
         <div>
-          <div className="flex items-center space-x-2">
-            <BrainCircuit className="w-6 h-6 text-purple-400" />
-            <h2 className="text-xl font-bold text-white tracking-wide">Memory Manager</h2>
+          <div className="flex items-center gap-2">
+            <BrainCircuit className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-xl font-bold text-white tracking-tight">Persistent Memory & Context</h2>
           </div>
-          <p className="text-xs text-gray-400 mt-1 max-w-xl">
-            Coagent remembers your verified preferences and domain facts across sessions so future tasks require less setup.
-            Items are strictly isolated to this workspace.
+          <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+            Retain verified user preferences, domain knowledge, and past workflow summaries across sessions. 
+            Cryptographically isolated per workspace.
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleToggle}
-            className={`flex items-center space-x-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
               isEnabled 
-                ? 'bg-purple-950/40 border-purple-500/50 text-purple-300' 
-                : 'bg-[#21262d] border-[#30363d] text-gray-400'
+                ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300' 
+                : 'bg-white/[0.04] border-white/[0.08] text-zinc-400'
             }`}
           >
             <Power className="w-3.5 h-3.5" />
-            <span>{isEnabled ? 'Long-Term Memory: ON' : 'Memory: OFF'}</span>
+            <span>{isEnabled ? 'Memory: Active' : 'Memory: Offline'}</span>
           </button>
 
           <button
             onClick={handleExport}
-            className="flex items-center space-x-1 bg-[#21262d] hover:bg-[#30363d] text-gray-300 text-xs font-medium px-3 py-1.5 rounded-lg transition"
+            className="flex items-center gap-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 text-xs font-medium px-3 py-1.5 rounded-xl border border-white/[0.08] transition"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export</span>
@@ -115,39 +113,39 @@ export const MemoryManager: React.FC = () => {
           <button
             onClick={() => setShowAddModal(true)}
             disabled={!isEnabled}
-            className="flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
+            className="flex items-center gap-1.5 bg-white text-black hover:bg-zinc-200 text-xs font-semibold px-3.5 py-1.5 rounded-xl transition disabled:opacity-40"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Add Memory</span>
           </button>
         </div>
       </div>
 
       {!isEnabled && (
-        <div className="bg-amber-950/30 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-200 mb-6">
-          Enable long-term memory before adding new items. Existing items remain visible and deletable while memory is off.
+        <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-200 mb-6">
+          Enable memory before recording new facts. Existing records remain accessible and deletable while offline.
         </div>
       )}
 
       {/* Tenant Isolation Banner */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-xs text-gray-300 flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-2">
+      <div className="bg-[#09090c] border border-white/[0.08] rounded-xl p-3 text-xs text-zinc-300 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>Tenant boundary: Memory stored here is scoped strictly to workspace <strong>'default'</strong>.</span>
+          <span>Workspace isolation: Storage is strictly scoped to tenant <strong>'default'</strong>.</span>
         </div>
-        <span className="text-[11px] text-gray-500 font-mono">Zero Cross-Tenant Leakage</span>
+        <span className="text-[10px] text-zinc-500 font-mono">Zero Cross-Tenant Leakage</span>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center space-x-2 mb-4">
+      <div className="flex items-center gap-1.5 mb-4">
         {['all', 'preference', 'fact', 'summary'].map((type) => (
           <button
             key={type}
             onClick={() => setFilterType(type)}
-            className={`text-xs capitalize px-3 py-1 rounded-md transition ${
+            className={`text-xs capitalize px-3 py-1 rounded-lg transition ${
               filterType === type 
-                ? 'bg-[#21262d] text-white font-medium border border-gray-600' 
-                : 'text-gray-400 hover:text-white hover:bg-[#21262d]/50'
+                ? 'bg-white text-black font-semibold shadow-xs' 
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
             }`}
           >
             {type}s
@@ -156,65 +154,65 @@ export const MemoryManager: React.FC = () => {
       </div>
 
       {/* Memory List */}
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {filteredMemories.length === 0 ? (
-          <div className="text-center py-12 bg-[#161b22] rounded-xl border border-[#30363d] text-xs text-gray-500 italic">
+          <div className="text-center py-12 bg-[#09090c] rounded-2xl border border-white/[0.08] text-xs text-zinc-600 italic">
             No memories remembered for this category yet.
           </div>
         ) : (
           filteredMemories.map((mem) => (
             <div
               key={mem.id}
-              className="bg-[#161b22] border border-[#30363d] hover:border-gray-500 p-4 rounded-xl transition flex items-start justify-between group"
+              className="bg-[#09090c] border border-white/[0.08] hover:border-white/[0.18] p-4 rounded-xl transition flex items-start justify-between group shadow-sm"
             >
               <div className="space-y-1.5 flex-1 pr-4">
-                <div className="flex items-center space-x-2">
-                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                    mem.type === 'preference' ? 'bg-indigo-500/20 text-indigo-300' :
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full ${
+                    mem.type === 'preference' ? 'bg-cyan-500/20 text-cyan-300' :
                     mem.type === 'fact' ? 'bg-emerald-500/20 text-emerald-300' :
                     'bg-amber-500/20 text-amber-300'
                   }`}>
                     {mem.type}
                   </span>
                   {mem.key && (
-                    <span className="text-[11px] font-mono text-gray-400">
+                    <span className="text-[11px] font-mono text-zinc-500">
                       key: {mem.key}
                     </span>
                   )}
                 </div>
                 {editingId === mem.id ? (
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2 mt-1">
                     <input
                       value={editingContent}
                       onChange={(event) => setEditingContent(event.target.value)}
-                      className="flex-1 bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+                      className="flex-1 bg-[#121215] border border-white/[0.12] rounded-lg p-2 text-xs text-white focus:outline-none"
                       autoFocus
                     />
-                    <button onClick={() => handleEdit(mem.id)} className="text-xs text-emerald-300 hover:text-emerald-200">Save</button>
-                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-400 hover:text-white">Cancel</button>
+                    <button onClick={() => handleEdit(mem.id)} className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1">Save</button>
+                    <button onClick={() => setEditingId(null)} className="text-xs text-zinc-400 hover:text-white px-2 py-1">Cancel</button>
                   </div>
                 ) : (
-                  <p className="text-xs text-white leading-relaxed">{mem.content}</p>
+                  <p className="text-xs text-zinc-200 leading-relaxed">{mem.content}</p>
                 )}
-                <div className="text-[10px] text-gray-500">
+                <div className="text-[10px] text-zinc-500 font-mono">
                   Recorded on {new Date(mem.created_at).toLocaleDateString()}
                 </div>
               </div>
 
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => { setEditingId(mem.id); setEditingContent(mem.content); }}
-                  className="text-gray-500 hover:text-indigo-300 p-1.5 rounded transition"
+                  className="text-zinc-500 hover:text-white p-1.5 rounded-lg transition"
                   title="Edit memory item"
                 >
-                  <Pencil className="w-4 h-4" />
+                  <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => handleDelete(mem.id)}
-                  className="text-gray-500 hover:text-rose-400 p-1.5 rounded transition"
+                  className="text-zinc-500 hover:text-rose-400 p-1.5 rounded-lg transition"
                   title="Delete memory item"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -224,16 +222,16 @@ export const MemoryManager: React.FC = () => {
 
       {/* Create Memory Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-md w-full p-5 shadow-2xl">
-            <h3 className="text-sm font-semibold text-white mb-3">Add Long-Term Memory</h3>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0e0e12] border border-white/[0.12] rounded-2xl max-w-md w-full p-5 shadow-2xl">
+            <h3 className="text-sm font-bold text-white mb-3">Add Durable Memory</h3>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Memory Type</label>
+                <label className="text-xs text-zinc-400 block mb-1">Memory Type</label>
                 <select
                   value={newType}
                   onChange={(e) => setNewType(e.target.value as any)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+                  className="w-full bg-[#16161b] border border-white/[0.1] rounded-lg p-2 text-xs text-white focus:outline-none"
                 >
                   <option value="preference">Preference (Format/Style/Workflow)</option>
                   <option value="fact">Fact (Durable contextual information)</option>
@@ -241,37 +239,37 @@ export const MemoryManager: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Identifier Key (Optional)</label>
+                <label className="text-xs text-zinc-400 block mb-1">Identifier Key (Optional)</label>
                 <input
                   type="text"
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   placeholder="e.g. report_style or fiscal_year"
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white"
+                  className="w-full bg-[#16161b] border border-white/[0.1] rounded-lg p-2 text-xs text-white focus:outline-none"
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Content</label>
+                <label className="text-xs text-zinc-400 block mb-1">Content</label>
                 <textarea
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   placeholder="What should Coagent remember? (e.g. 'I prefer spreadsheets with formula totals and dark headers')"
                   rows={3}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-xs text-white resize-none"
+                  className="w-full bg-[#16161b] border border-white/[0.1] rounded-lg p-2 text-xs text-white resize-none focus:outline-none"
                   required
                 />
               </div>
-              <div className="flex items-center justify-end space-x-2 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="text-xs text-gray-400 hover:text-white px-3 py-1.5"
+                  className="text-xs text-zinc-400 hover:text-white px-3 py-1.5"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-1.5 rounded"
+                  className="bg-white text-black hover:bg-zinc-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition"
                 >
                   Save Memory
                 </button>

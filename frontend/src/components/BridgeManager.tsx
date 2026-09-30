@@ -88,81 +88,81 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-6">
-      <div className="flex items-center justify-between pb-6 border-b border-[#30363d] mb-6">
+      <div className="flex flex-wrap items-center justify-between pb-6 border-b border-white/[0.08] mb-6 gap-3">
         <div>
-          <div className="flex items-center space-x-2">
-            <HardDrive className="w-6 h-6 text-emerald-400" />
-            <h2 className="text-xl font-bold text-white tracking-wide">Local Desktop Bridge</h2>
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-xl font-bold text-white tracking-tight">Local Desktop Bridge</h2>
           </div>
-          <p className="text-xs text-gray-400 mt-1 max-w-xl">
-            The lightweight companion desktop process lets Coagent safely access specific folders and browser control on your computer.
-            Never blanket OS access — grants are strictly scoped and instantly revocable.
+          <p className="text-xs text-zinc-400 mt-1 max-w-xl">
+            Companion native bridge enabling secure access to explicitly granted directories and browser automations. 
+            Zero ambient privileges — permissions are strictly scoped and instantly revocable.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 bg-[#161b22] px-3 py-1.5 rounded-lg border border-[#30363d]">
-          <span className={`w-2.5 h-2.5 rounded-full ${status?.is_connected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-          <span className="text-xs font-medium text-white">
+        <div className="flex items-center gap-2 bg-[#09090c] px-3.5 py-1.5 rounded-xl border border-white/[0.08]">
+          <span className={`w-2 h-2 rounded-full ${status?.is_connected ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400'}`} />
+          <span className="text-xs font-mono text-zinc-200">
             {status?.is_connected ? 'Bridge Connected' : 'Bridge Offline'}
           </span>
         </div>
       </div>
 
       {/* Security Rule Card */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 mb-6">
-        <div className="flex items-start space-x-3">
+      <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl p-4 mb-6 shadow-sm">
+        <div className="flex items-start gap-3">
           <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-gray-300 space-y-1">
+          <div className="text-xs text-zinc-300 space-y-1">
             <h4 className="font-semibold text-white">Scoped Access Security Policy</h4>
-            <p className="text-gray-400 leading-relaxed">
-              The agent runs inside an isolated sandbox. It communicates through authenticated session tokens to read only files inside your explicitly granted folders.
-              Any attempt to access parent directories or out-of-scope paths is immediately blocked and logged to the tamper-evident audit trail.
+            <p className="text-zinc-400 leading-relaxed">
+              The agent runs inside an isolated sandbox. It communicates through authenticated session tokens to access only files inside your explicitly granted folders.
+              Any attempt to access parent directories or out-of-scope paths is immediately blocked and recorded to the tamper-evident audit log.
             </p>
           </div>
         </div>
       </div>
 
       {/* Add Folder Grant Form */}
-      <form onSubmit={handleGrant} className="flex items-center space-x-2 mb-6">
+      <form onSubmit={handleGrant} className="flex items-center gap-2 mb-6">
         <input
           type="text"
           value={newFolder}
           onChange={(e) => setNewFolder(e.target.value)}
-          placeholder="Enter absolute folder path (e.g. D:/Downloads or C:/Users/Docs/Receipts)..."
-          className="flex-1 bg-[#161b22] border border-[#30363d] rounded-lg p-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 font-mono"
+          placeholder="Enter absolute folder path (e.g. D:/Downloads or C:/Users/Documents)..."
+          className="flex-1 bg-[#121215] border border-white/[0.1] rounded-xl p-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/30 font-mono"
         />
         <button
           type="submit"
           disabled={!newFolder.trim() || isLoading}
-          className="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold py-2.5 px-4 rounded-lg transition"
+          className="inline-flex items-center gap-1.5 bg-white text-black hover:bg-zinc-200 disabled:opacity-30 text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow"
         >
-          <FolderPlus className="w-4 h-4" />
-          <span>Grant Scope</span>
+          <FolderPlus className="w-4 h-4 stroke-[2.5]" />
+          <span>Grant Folder</span>
         </button>
       </form>
 
       {/* Granted Folders List */}
-      <div className="space-y-2.5 mb-8">
-        <div className="text-xs font-semibold uppercase text-gray-500 tracking-wider">
+      <div className="space-y-2 mb-6">
+        <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1 px-1">
           Currently Granted Folders
         </div>
         {!status?.granted_folders || status.granted_folders.length === 0 ? (
-          <div className="p-4 bg-[#161b22] rounded-xl border border-[#30363d] text-xs text-gray-500 italic">
+          <div className="p-4 bg-[#09090c] rounded-2xl border border-white/[0.08] text-xs text-zinc-600 italic">
             No folders currently granted. Agent has zero access to local filesystem.
           </div>
         ) : (
           status.granted_folders.map((folder, idx) => (
             <div
               key={idx}
-              className="bg-[#161b22] border border-[#30363d] p-3 rounded-lg flex items-center justify-between group"
+              className="bg-[#09090c] border border-white/[0.08] p-3 rounded-xl flex items-center justify-between group shadow-sm"
             >
-              <div className="flex items-center space-x-2.5 font-mono text-xs text-white">
+              <div className="flex items-center gap-2.5 font-mono text-xs text-zinc-200">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 <span>{folder}</span>
               </div>
               <button
                 onClick={() => handleRevoke(folder)}
-                className="text-xs text-rose-400 hover:text-rose-300 font-medium px-2 py-1 rounded hover:bg-rose-950/30 transition flex items-center space-x-1"
+                className="text-xs text-rose-400 hover:text-rose-300 font-medium px-2 py-1 rounded-lg hover:bg-rose-950/40 transition flex items-center gap-1 font-mono"
                 title="Revoke folder access"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -173,45 +173,66 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
         )}
       </div>
 
-      {/* Scoped Browser Control */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 mb-6">
-        <div className="flex items-center space-x-3 mb-3">
-          <Globe className="w-5 h-5 text-indigo-400" />
+      {/* Web Domain Grants */}
+      <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl p-4 mb-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-3">
+          <Globe className="w-5 h-5 text-cyan-400" />
           <div>
             <h4 className="text-xs font-semibold text-white">Web Domain Grants</h4>
-            <p className="text-[11px] text-gray-400">Web fetches for the active session are limited to these domains.</p>
+            <p className="text-[11px] text-zinc-400">Web requests for the active session are restricted to these domains.</p>
           </div>
         </div>
-        <form onSubmit={handleGrantDomain} className="flex items-center space-x-2 mb-3">
+        <form onSubmit={handleGrantDomain} className="flex items-center gap-2 mb-3">
           <input
             type="text"
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
-            placeholder="example.com"
+            placeholder="e.g. github.com, x.com, news.ycombinator.com"
             disabled={!activeSessionId}
-            className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg p-2 text-xs text-white placeholder-gray-500 font-mono disabled:opacity-40"
+            className="flex-1 bg-[#121215] border border-white/[0.1] rounded-xl p-2 text-xs text-white placeholder-zinc-500 font-mono focus:outline-none focus:border-white/30 disabled:opacity-40"
           />
-          <button type="submit" disabled={!activeSessionId || !newDomain.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold px-3 py-2 rounded-lg">Grant Domain</button>
+          <button 
+            type="submit" 
+            disabled={!activeSessionId || !newDomain.trim()} 
+            className="bg-white text-black hover:bg-zinc-200 disabled:opacity-40 text-xs font-semibold px-3.5 py-2 rounded-xl transition"
+          >
+            Grant Domain
+          </button>
         </form>
         <div className="flex flex-wrap gap-2">
-          {domains.length === 0 ? <span className="text-xs text-gray-500 italic">No domains granted for this session.</span> : domains.map((domain) => (
-            <button key={domain} onClick={() => handleRevokeDomain(domain)} className="text-xs font-mono text-emerald-300 border border-emerald-500/30 rounded px-2 py-1 hover:bg-rose-950/30 hover:text-rose-300" title="Revoke domain grant">{domain} ×</button>
-          ))}
+          {domains.length === 0 ? (
+            <span className="text-xs text-zinc-600 italic">No domains granted for this session.</span>
+          ) : (
+            domains.map((domain) => (
+              <button 
+                key={domain} 
+                onClick={() => handleRevokeDomain(domain)} 
+                className="text-xs font-mono text-cyan-300 bg-white/[0.05] border border-white/[0.08] rounded-lg px-2.5 py-1 hover:bg-rose-950/40 hover:text-rose-300 transition" 
+                title="Revoke domain grant"
+              >
+                {domain} ×
+              </button>
+            ))
+          )}
         </div>
       </div>
 
       {/* Scoped Browser Control */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Globe className="w-5 h-5 text-indigo-400" />
+      <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl p-4 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          <Globe className="w-5 h-5 text-cyan-400" />
           <div>
             <h4 className="text-xs font-semibold text-white">Scoped Browser Automation</h4>
-            <p className="text-[11px] text-gray-400">Allows agent to browse research sites with automatic handover at login/checkout.</p>
+            <p className="text-[11px] text-zinc-400">Allows agent to browse research sites with automatic handover at login/checkout.</p>
           </div>
         </div>
         <button
           onClick={handleBrowserToggle}
-          className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${status?.allow_browser_control ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}
+          className={`text-xs font-semibold px-3 py-1 rounded-full border transition ${
+            status?.allow_browser_control 
+              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' 
+              : 'text-zinc-500 bg-white/[0.04] border-white/[0.08]'
+          }`}
         >
           {status?.allow_browser_control ? 'Granted' : 'Off'}
         </button>

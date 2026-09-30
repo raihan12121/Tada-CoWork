@@ -49,7 +49,9 @@ export const App: React.FC = () => {
     };
   }, [activeSessionId]);
 
-  useEffect(() => { api.listProviderAccounts().then(setProviderAccounts).catch(() => setProviderAccounts([])); }, [currentTab]);
+  useEffect(() => { 
+    api.listProviderAccounts().then(setProviderAccounts).catch(() => setProviderAccounts([])); 
+  }, [currentTab]);
 
   // WebSocket Live Streaming for Active Session
   useEffect(() => {
@@ -98,7 +100,7 @@ export const App: React.FC = () => {
       };
 
       ws.onerror = () => {
-        // Fallback or retry
+        // Handled gracefully
       };
     } catch (err) {
       console.error(err);
@@ -201,7 +203,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="apple-shell flex h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased overflow-hidden">
+    <div className="grok-shell flex h-screen bg-black text-zinc-100 font-sans antialiased overflow-hidden">
       {/* Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
@@ -216,7 +218,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto">
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-black">
         {currentTab === 'skills' && (
           <SkillsManager onSessionCreated={handleSelectSession} />
         )}
@@ -229,41 +231,102 @@ export const App: React.FC = () => {
         {currentTab === 'settings' && <ProviderSettings />}
 
         {currentTab === 'workspace' && (
-          <div className="claude-content">
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col">
             {!activeSession ? (
-              <>
-                <div className="claude-topbar">
-                  <div>
-                    <div className="claude-eyebrow">Workspace</div>
-                    <h1 className="claude-page-title">What are you working on?</h1>
-                    <p className="claude-page-subtitle">Give Coagent a goal and it will turn it into an executable work plan.</p>
-                  </div>
-                  <div className="claude-status-pill"><span />Ready to work</div>
-                </div>
-                <TaskIntake
-                  onSubmitTask={handleCreateSession}
-                  isLoading={isLoading}
-                  providerAccounts={providerAccounts}
-                />
-              </>
+              <TaskIntake
+                onSubmitTask={handleCreateSession}
+                isLoading={isLoading}
+                providerAccounts={providerAccounts}
+              />
             ) : (
-              <div className="claude-workspace">
-                <div className="claude-topbar claude-task-topbar">
+              <div className="w-full flex-1 flex flex-col">
+                {/* Active Task Topbar */}
+                <div className="flex flex-wrap items-center justify-between pb-4 mb-5 border-b border-white/[0.08] gap-3">
                   <div className="min-w-0 pr-4">
-                    <div className="claude-eyebrow">Active task · {activeSession.status.replace('_', ' ')}</div>
-                    <h1 className="claude-page-title truncate">{activeSession.task}</h1>
+                    <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 mb-1">
+                      <span>Task #{activeSession.id.slice(0, 8)}</span>
+                      <span>·</span>
+                      <span className="capitalize text-zinc-300 font-semibold">{activeSession.status.replace('_', ' ')}</span>
+                    </div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-white truncate tracking-tight">
+                      {activeSession.task}
+                    </h1>
                   </div>
-                  <button onClick={() => setActiveSession(null)} className="claude-secondary-button shrink-0"><Plus className="w-4 h-4" /> New task</button>
+                  <button 
+                    onClick={() => setActiveSession(null)} 
+                    className="inline-flex items-center gap-1.5 bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>New Task</span>
+                  </button>
                 </div>
 
-                <div className="claude-workspace-grid">
-                  <section className="claude-main-column">
-                    <div className="claude-section-heading"><div><div className="claude-eyebrow">Execution</div><h2>Live activity</h2></div><span className="claude-live-indicator"><span /> Live</span></div>
-                    <ActivityFeed events={events} sessionStatus={activeSession.status} pendingApproval={activeSession.pending_approval} onPause={handlePause} onResume={handleResume} onCancel={handleCancel} onResolveApproval={handleResolveApproval} />
+                {/* Grok Dual-Pane Workspace */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start flex-1 pb-10">
+                  {/* Left Column: Live Agent Activity Stream */}
+                  <section className="lg:col-span-7 min-w-0">
+                    <div className="flex items-center justify-between pb-2 mb-2 px-1">
+                      <div>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                          Live Agent Execution
+                        </span>
+                        <h2 className="text-sm font-bold text-white">Stream & Reasoning</h2>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-mono text-cyan-400 bg-cyan-950/40 px-2.5 py-0.5 rounded-full border border-cyan-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        <span>Live</span>
+                      </span>
+                    </div>
+                    <ActivityFeed 
+                      events={events} 
+                      sessionStatus={activeSession.status} 
+                      pendingApproval={activeSession.pending_approval} 
+                      onPause={handlePause} 
+                      onResume={handleResume} 
+                      onCancel={handleCancel} 
+                      onResolveApproval={handleResolveApproval} 
+                    />
                   </section>
-                  <aside className="claude-inspector">
-                    {activeSession.plan && <PlanView plan={activeSession.plan} sessionStatus={activeSession.status} onStartExecution={handleStartExecution} onDeleteStep={handleDeleteStep} onAddStep={handleAddStep} onReorderSteps={handleReorderSteps} />}
-                    {usage && <div className="claude-usage-card"><div className="claude-eyebrow">Task usage</div><div className="claude-stat-grid"><div><strong>{usage.tool_calls}</strong><span>Tool calls</span></div><div><strong>{usage.steps_completed}</strong><span>Steps</span></div><div><strong>${usage.estimated_cost_usd.toFixed(4)}</strong><span>Est. cost</span></div><div><strong>{usage.runtime_limit_seconds}s</strong><span>Runtime cap</span></div></div></div>}
+
+                  {/* Right Column: Execution Plan & Deliverables Inspector */}
+                  <aside className="lg:col-span-5 min-w-0 flex flex-col gap-4">
+                    {activeSession.plan && (
+                      <PlanView 
+                        plan={activeSession.plan} 
+                        sessionStatus={activeSession.status} 
+                        onStartExecution={handleStartExecution} 
+                        onDeleteStep={handleDeleteStep} 
+                        onAddStep={handleAddStep} 
+                        onReorderSteps={handleReorderSteps} 
+                      />
+                    )}
+
+                    {usage && (
+                      <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl p-4 shadow-xl">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold mb-2">
+                          Resource & Token Telemetry
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
+                            <strong className="text-sm font-bold text-white font-mono">{usage.tool_calls}</strong>
+                            <span className="text-[10px] text-zinc-500 block font-mono">Tool Calls</span>
+                          </div>
+                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
+                            <strong className="text-sm font-bold text-white font-mono">{usage.steps_completed}</strong>
+                            <span className="text-[10px] text-zinc-500 block font-mono">Steps Done</span>
+                          </div>
+                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
+                            <strong className="text-sm font-bold text-cyan-400 font-mono">${usage.estimated_cost_usd.toFixed(4)}</strong>
+                            <span className="text-[10px] text-zinc-500 block font-mono">Est. Cost</span>
+                          </div>
+                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
+                            <strong className="text-sm font-bold text-zinc-300 font-mono">{usage.runtime_limit_seconds}s</strong>
+                            <span className="text-[10px] text-zinc-500 block font-mono">Time Cap</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <ArtifactPanel artifacts={activeSession.artifacts} sessionId={activeSession.id} />
                   </aside>
                 </div>
@@ -273,14 +336,14 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Non-blocking Floating Notification Toast */}
+      {/* Floating Notification Toast */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-3 bg-red-950/95 border border-red-500/50 text-red-200 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md">
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#121216] border border-rose-500/40 text-rose-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fadeIn">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
           <span className="text-xs font-medium">{toastMessage}</span>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-red-400 hover:text-white ml-2 transition"
+            className="text-zinc-400 hover:text-white ml-2 transition"
           >
             <X className="w-4 h-4" />
           </button>
