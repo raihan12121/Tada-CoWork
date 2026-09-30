@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, create_engine, text
+    Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, create_engine, text, select
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, relationship
@@ -18,6 +18,8 @@ class DBSession(Base):
     id = Column(String, primary_key=True)
     task = Column(Text, nullable=False)
     workspace_id = Column(String, default="default", index=True)
+    bot_id = Column(String, nullable=True, index=True)
+    channel_id = Column(String, nullable=True, index=True)
     parent_session_id = Column(String, nullable=True, index=True)
     provider_account_id = Column(String, nullable=True)
     allow_provider_failover = Column(Boolean, default=False)
@@ -285,6 +287,39 @@ class DBMcpServer(Base):
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
+class DBBot(Base):
+    """AnyWork Autonomous Agent persona."""
+    __tablename__ = "bots"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, default="default", index=True)
+    name = Column(String, nullable=False, index=True)
+    avatar = Column(String, nullable=False, default="🤖")
+    role_tag = Column(String, nullable=False, default="Assistant")
+    description = Column(Text, nullable=False)
+    folder_name = Column(String, nullable=False, default="General")
+    pinned = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False)
+    model = Column(String, nullable=True)
+    enabled_tools_json = Column(Text, default="[]")
+    individual_memory_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+
+class DBChannel(Base):
+    """Multi-agent collaboration group chat / channel."""
+    __tablename__ = "channels"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, default="default", index=True)
+    name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    bot_ids_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+
 _engine_kwargs = {"echo": False}
 if settings.DATABASE_URL.startswith("sqlite"):
     # SQLite is the documented local runtime. Give short-lived background
@@ -303,6 +338,8 @@ async def init_db():
             result = await conn.execute(text("PRAGMA table_info(sessions)"))
             existing = {row[1] for row in result.fetchall()}
             additions = {
+                "bot_id": "TEXT",
+                "channel_id": "TEXT",
                 "provider_account_id": "TEXT",
                 "allow_provider_failover": "BOOLEAN DEFAULT 0",
                 "enabled_tools_json": "TEXT DEFAULT '[]'",
@@ -355,6 +392,8 @@ async def init_db():
             # Create performance indexes idempotently
             indexes = [
                 "CREATE INDEX IF NOT EXISTS ix_sessions_workspace_id ON sessions (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_sessions_bot_id ON sessions (bot_id)",
+                "CREATE INDEX IF NOT EXISTS ix_sessions_channel_id ON sessions (channel_id)",
                 "CREATE INDEX IF NOT EXISTS ix_sessions_parent_session_id ON sessions (parent_session_id)",
                 "CREATE INDEX IF NOT EXISTS ix_sessions_status ON sessions (status)",
                 "CREATE INDEX IF NOT EXISTS ix_sessions_created_at ON sessions (created_at)",
@@ -369,9 +408,102 @@ async def init_db():
                 "CREATE INDEX IF NOT EXISTS ix_mcp_servers_workspace_id ON mcp_servers (workspace_id)",
                 "CREATE INDEX IF NOT EXISTS ix_activity_events_session_id ON activity_events (session_id)",
                 "CREATE INDEX IF NOT EXISTS ix_activity_events_timestamp ON activity_events (timestamp)",
+                "CREATE INDEX IF NOT EXISTS ix_bots_workspace_id ON bots (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_channels_workspace_id ON channels (workspace_id)",
             ]
             for idx in indexes:
                 await conn.execute(text(idx))
+
+    # Seed default AnyWork Grokbot-style team if empty
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(DBBot))
+        if not result.scalars().first():
+            default_bots = [
+                DBBot(
+                    id="bot_klaus",
+                    name="Klaus",
+                    avatar="👔",
+                    role_tag="Chief of Staff",
+                    folder_name="Leadership",
+                    pinned=True,
+                    description="You are Klaus, the Chief of Staff. You lead organizational strategy, break down ambitious goals into executable tasks, coordinate specialist bots (Becky, Dev, Motion, Inbox, Dan), and ensure deliverables are polished and aligned with user priorities.",
+                    enabled_tools_json='["web_search", "web_fetch", "doc_gen", "file_ops", "swarm_delegate"]',
+                    individual_memory_json='["User values clear, direct summaries.", "Focus on high-leverage outcomes first."]'
+                ),
+                DBBot(
+                    id="bot_becky",
+                    name="Becky",
+                    avatar="⚡",
+                    role_tag="COO & Operations",
+                    folder_name="Leadership",
+                    pinned=True,
+                    description="You are Becky, Chief Operating Officer. You handle cross-functional project execution, operational workflows, task tracking, and routine cadence.",
+                    enabled_tools_json='["file_ops", "doc_gen", "web_search"]',
+                    individual_memory_json='["Tracks operational bottlenecks.", "Verifies routine execution."]'
+                ),
+                DBBot(
+                    id="bot_dev",
+                    name="Dev",
+                    avatar="💻",
+                    role_tag="Senior Engineer",
+                    folder_name="Engineering",
+                    pinned=False,
+                    description="You are Dev, Lead Software Engineer. You write clean Python/JavaScript, execute terminal scripts, inspect datasets, debug failures, and manage sandboxed environments.",
+                    enabled_tools_json='["code_exec", "file_ops", "web_search", "bridge_files"]',
+                    individual_memory_json='["Prefers type-safe and modular code.", "Enforces sandbox security."]'
+                ),
+                DBBot(
+                    id="bot_motion",
+                    name="Motion",
+                    avatar="🎬",
+                    role_tag="Animator & Video",
+                    folder_name="Marketing",
+                    pinned=False,
+                    description="You are Motion, Creative Media Specialist. You design visual assets, motion graphic scripts, HTML5 animation blueprints, and marketing deliverables.",
+                    enabled_tools_json='["code_exec", "file_ops", "doc_gen"]',
+                    individual_memory_json='["Focuses on brand consistency and high visual quality."]'
+                ),
+                DBBot(
+                    id="bot_inbox",
+                    name="Inbox",
+                    avatar="📬",
+                    role_tag="Email & Comms Triager",
+                    folder_name="Operations",
+                    pinned=False,
+                    description="You are Inbox, Communications Assistant. You categorize inbound messages, draft high-priority responses, structure morning digest briefings, and enforce human confirmation before external delivery.",
+                    enabled_tools_json='["communication", "doc_gen", "file_ops"]',
+                    individual_memory_json='["Never sends external email without explicit user approval."]'
+                ),
+                DBBot(
+                    id="bot_dan",
+                    name="Dan",
+                    avatar="📊",
+                    role_tag="CFO & Finance",
+                    folder_name="Leadership",
+                    pinned=False,
+                    description="You are Dan, Chief Financial Officer. You analyze spreadsheets, normalize expense data, compute unit economics, and forecast financial metrics.",
+                    enabled_tools_json='["file_ops", "doc_gen", "code_exec"]',
+                    individual_memory_json='["Double-checks math and formats financial tables clearly."]'
+                ),
+            ]
+            session.add_all(default_bots)
+
+            default_channels = [
+                DBChannel(
+                    id="channel_all_hands",
+                    name="all-hands",
+                    description="Company-wide channel for cross-functional alignment and planning.",
+                    bot_ids_json='["bot_klaus", "bot_becky", "bot_dev", "bot_motion", "bot_inbox", "bot_dan"]'
+                ),
+                DBChannel(
+                    id="channel_leadership",
+                    name="leadership",
+                    description="Executive discussion room for Klaus, Becky, and Dan.",
+                    bot_ids_json='["bot_klaus", "bot_becky", "bot_dan"]'
+                )
+            ]
+            session.add_all(default_channels)
+            await session.commit()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

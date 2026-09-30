@@ -130,6 +130,8 @@ class ConnectorModel(BaseModel):
 class SessionCreate(BaseModel):
     task: str = Field(..., min_length=1)
     workspace_id: str = "default"
+    bot_id: Optional[str] = None
+    channel_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     provider_account_id: Optional[str] = None
     allow_provider_failover: bool = False
@@ -149,6 +151,8 @@ class SessionModel(BaseModel):
     id: str
     task: str
     workspace_id: str = "default"
+    bot_id: Optional[str] = None
+    channel_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     provider_account_id: Optional[str] = None
     allow_provider_failover: bool = False
@@ -253,4 +257,77 @@ class SwarmRunResponse(BaseModel):
     status: str = "completed"
     synthesis: str
     artifacts_created: List[str] = Field(default_factory=list)
+
+
+class BotModel(BaseModel):
+    id: str
+    workspace_id: str = "default"
+    name: str
+    avatar: str = "🤖"
+    role_tag: str = "Assistant"
+    description: str
+    folder_name: str = "General"
+    pinned: bool = False
+    is_hidden: bool = False
+    model: Optional[str] = None
+    enabled_tools: List[str] = Field(default_factory=list)
+    individual_memory: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class BotCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    avatar: str = "🤖"
+    role_tag: str = "Assistant"
+    description: str
+    folder_name: str = "General"
+    pinned: bool = False
+    is_hidden: bool = False
+    model: Optional[str] = None
+    workspace_id: str = "default"
+    enabled_tools: List[str] = Field(default_factory=list)
+    individual_memory: List[str] = Field(default_factory=list)
+
+
+class BotUpdate(BaseModel):
+    name: Optional[str] = None
+    avatar: Optional[str] = None
+    role_tag: Optional[str] = None
+    description: Optional[str] = None
+    folder_name: Optional[str] = None
+    pinned: Optional[bool] = None
+    is_hidden: Optional[bool] = None
+    model: Optional[str] = None
+    enabled_tools: Optional[List[str]] = None
+    individual_memory: Optional[List[str]] = None
+
+
+class BotTemplate(BaseModel):
+    name: str
+    avatar: str = "🤖"
+    role_tag: str
+    description: str
+    folder_name: str = "General"
+    enabled_tools: List[str] = Field(default_factory=list)
+    individual_memory: List[str] = Field(default_factory=list)
+    template_version: str = "1.0.0"
+
+
+class ChannelModel(BaseModel):
+    id: str
+    workspace_id: str = "default"
+    name: str
+    description: Optional[str] = None
+    bot_ids: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ChannelCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    bot_ids: List[str] = Field(default_factory=list)
+    workspace_id: str = "default"
+
 

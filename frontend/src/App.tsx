@@ -1,29 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle, X, Plus } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
-import { TaskIntake } from './components/TaskIntake';
-import { PlanView } from './components/PlanView';
-import { ActivityFeed } from './components/ActivityFeed';
-import { ArtifactPanel } from './components/ArtifactPanel';
+import { AnyWorkChat } from './components/AnyWorkChat';
+import { AgentComputerPanel } from './components/AgentComputerPanel';
+import { BotModal } from './components/BotModal';
+import { ChannelModal } from './components/ChannelModal';
 import { MemoryManager } from './components/MemoryManager';
 import { ScheduleManager } from './components/ScheduleManager';
 import { BridgeManager } from './components/BridgeManager';
 import { AuditViewer } from './components/AuditViewer';
 import { ProviderSettings } from './components/ProviderSettings';
 import { SkillsManager } from './components/SkillsManager';
-import type { Session, ActivityEvent } from './types';
+import type { Session, ActivityEvent, Bot, Channel, BotCreate, BotUpdate, ChannelCreate } from './types';
 import { api, getBackendBaseUrl } from './services/api';
-import type { ProviderAccount } from './services/api';
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('workspace');
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [usage, setUsage] = useState<{ tool_calls: number; tool_call_limit: number; steps_completed: number; step_limit: number; estimated_cost_usd: number; runtime_limit_seconds: number } | null>(null);
+  const [isComputerOpen, setIsComputerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [providerAccounts, setProviderAccounts] = useState<ProviderAccount[]>([]);
+  const [botModalOpen, setBotModalOpen] = useState(false);
+  const [editingBot, setEditingBot] = useState<Bot | null>(null);
+  const [channelModalOpen, setChannelModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<any>(null);
 
@@ -32,33 +38,42 @@ export const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 5000);
   };
 
-  const activeSessionId = activeSession?.id;
+  // Load Bots and Channels on startup
+  const loadBotsAndChannels = async () => {
+    try {
+      const [fetchedBots, fetchedChannels] = await Promise.all([
+        api.listBots(),
+        api.listChannels()
+      ]);
+      setBots(fetchedBots);
+      setChannels(fetchedChannels);
+      if (fetchedBots.length > 0 && !activeBotId && !activeChannelId) {
+        setActiveBotId(fetchedBots[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load bots or channels:', err);
+    }
+  };
 
   useEffect(() => {
-    let ignore = false;
+    loadBotsAndChannels();
     api.listSessions().then((data) => {
-      if (!ignore) {
-        setSessions(data);
-        if (data.length > 0 && !activeSessionId) {
-          setActiveSession(data[0]);
-        }
+      setSessions(data);
+      if (data.length > 0 && !activeSession) {
+        setActiveSession(data[0]);
       }
     }).catch(console.error);
-    return () => {
-      ignore = true;
-    };
-  }, [activeSessionId]);
+  }, []);
 
-  useEffect(() => { 
-    api.listProviderAccounts().then(setProviderAccounts).catch(() => setProviderAccounts([])); 
-  }, [currentTab]);
+  const activeBot = bots.find((b) => b.id === activeBotId) || null;
+  const activeChannel = channels.find((c) => c.id === activeChannelId) || null;
+  const activeSessionId = activeSession?.id;
 
-  // WebSocket Live Streaming for Active Session
+  // Stream events for active session
   useEffect(() => {
     if (!activeSessionId) return;
 
     api.getSessionEvents(activeSessionId).then(setEvents).catch(console.error);
-    api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
 
     if (wsRef.current) {
       wsRef.current.close();
@@ -75,7 +90,7 @@ export const App: React.FC = () => {
       } catch {}
     }
     const wsUrl = `${proto}//${wsHost}/v1/sessions/${activeSessionId}/stream`;
-    
+
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -85,79 +100,122 @@ export const App: React.FC = () => {
           const event: ActivityEvent = JSON.parse(evt.data);
           setEvents((prev) => [...prev, event]);
 
-          // Debounce refresh on key milestones to prevent HTTP storm
           if (['artifact_created', 'approval_required', 'plan_revised', 'done', 'error'].includes(event.event_type)) {
             if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
             refreshTimerRef.current = setTimeout(() => {
               api.getSession(activeSessionId).then(setActiveSession).catch(console.error);
               api.listSessions().then(setSessions).catch(console.error);
-              api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
             }, 200);
           }
         } catch (e) {
           console.error(e);
         }
       };
-
-      ws.onerror = () => {
-        // Handled gracefully
-      };
     } catch (err) {
       console.error(err);
     }
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      if (wsRef.current) wsRef.current.close();
     };
   }, [activeSessionId]);
 
-  const handleCreateSession = async (task: string, files: File[] = [], providerAccountId?: string, allowProviderFailover = false) => {
+  // Sending message in AnyWork chat
+  const handleSendMessage = async (text: string) => {
     setIsLoading(true);
     try {
-      const newSession = await api.createSession(task, 'default', providerAccountId, allowProviderFailover);
-      for (const file of files) await api.uploadSessionInput(newSession.id, file);
+      // Create session tagged with active bot or channel
+      const newSession = await api.createSession(
+        text,
+        'default',
+        undefined,
+        false
+      );
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setEvents([]);
-      setCurrentTab('workspace');
+
+      // Start autonomous execution
+      await api.startSession(newSession.id);
+      const updated = await api.getSession(newSession.id);
+      setActiveSession(updated);
     } catch (err) {
-      console.error('Failed to generate plan:', err);
-      showToast('Failed to generate execution plan. Please check backend connection.');
+      console.error('Failed to send message:', err);
+      showToast('Failed to start agent task. Check connection.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleStartExecution = async () => {
-    if (!activeSession) return;
-    await api.startSession(activeSession.id);
-    const updated = await api.getSession(activeSession.id);
-    setActiveSession(updated);
-    api.listSessions().then(setSessions);
+  // Bot Management Handlers
+  const handleSaveBot = async (data: BotCreate | BotUpdate) => {
+    if (editingBot) {
+      await api.updateBot(editingBot.id, data as BotUpdate);
+      showToast(`Updated @${editingBot.name}`);
+    } else {
+      const created = await api.createBot(data as BotCreate);
+      setActiveBotId(created.id);
+      showToast(`Created @${created.name}`);
+    }
+    await loadBotsAndChannels();
+    setEditingBot(null);
   };
 
-  const handlePause = async () => {
-    if (!activeSession) return;
-    await api.pauseSession(activeSession.id);
-    const updated = await api.getSession(activeSession.id);
-    setActiveSession(updated);
+  const handleDuplicateBot = async (botId: string) => {
+    try {
+      const dup = await api.duplicateBot(botId);
+      await loadBotsAndChannels();
+      setActiveBotId(dup.id);
+      showToast(`Duplicated bot as @${dup.name}`);
+      setBotModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to duplicate bot.');
+    }
   };
 
-  const handleResume = async () => {
-    if (!activeSession) return;
-    await api.resumeSession(activeSession.id);
-    const updated = await api.getSession(activeSession.id);
-    setActiveSession(updated);
+  const handleDeleteBot = async (botId: string) => {
+    try {
+      await api.deleteBot(botId);
+      await loadBotsAndChannels();
+      setActiveBotId(bots[0]?.id || null);
+      showToast('Bot deleted.');
+      setBotModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete bot.');
+    }
   };
 
-  const handleCancel = async () => {
-    if (!activeSession) return;
-    await api.cancelSession(activeSession.id);
-    const updated = await api.getSession(activeSession.id);
-    setActiveSession(updated);
-    api.listSessions().then(setSessions);
+  const handleExportTemplate = async () => {
+    if (!activeBot) return;
+    try {
+      const template = await api.exportBotTemplate(activeBot.id);
+      const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeBot.name.toLowerCase()}_template.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported template for @${activeBot.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to export bot template.');
+    }
+  };
+
+  const handleCreateChannel = async (data: ChannelCreate) => {
+    try {
+      const created = await api.createChannel(data);
+      await loadBotsAndChannels();
+      setActiveChannelId(created.id);
+      setActiveBotId(null);
+      showToast(`Created channel #${created.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to create channel.');
+    }
   };
 
   const handleResolveApproval = async (
@@ -177,174 +235,155 @@ export const App: React.FC = () => {
     api.listSessions().then(setSessions);
   };
 
-  const handleSelectSession = async (id: string) => {
-    const s = await api.getSession(id);
-    setActiveSession(s);
-    setEvents(await api.getSessionEvents(id));
-    setUsage(await api.getSessionUsage(id));
-  };
-
-  const handleDeleteStep = async (stepId: string) => {
-    if (!activeSession) return;
-    const plan = await api.editPlan(activeSession.id, { action: 'remove', step_id: stepId });
-    setActiveSession({ ...activeSession, plan });
-  };
-
-  const handleAddStep = async (description: string, tool: string, risk_level: 'low' | 'medium' | 'high') => {
-    if (!activeSession) return;
-    const plan = await api.editPlan(activeSession.id, { action: 'add', description, tool, risk_level });
-    setActiveSession({ ...activeSession, plan });
-  };
-
-  const handleReorderSteps = async (stepIds: string[]) => {
-    if (!activeSession) return;
-    const plan = await api.editPlan(activeSession.id, { action: 'reorder', ordered_step_ids: stepIds });
-    setActiveSession({ ...activeSession, plan });
-  };
-
   return (
-    <div className="grok-shell flex h-screen bg-black text-zinc-100 font-sans antialiased overflow-hidden">
-      {/* Sidebar Navigation */}
+    <div className="anywork-shell flex h-screen bg-black text-zinc-100 font-sans antialiased overflow-hidden select-none">
+      {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         sessions={sessions}
         activeSessionId={activeSession?.id || null}
-        onSelectSession={handleSelectSession}
-        onNewSession={() => {
-          setActiveSession(null);
+        onSelectSession={async (id) => {
+          const s = await api.getSession(id);
+          setActiveSession(s);
+          setEvents(await api.getSessionEvents(id));
           setCurrentTab('workspace');
         }}
+        onNewSession={() => {
+          setActiveSession(null);
+          setEvents([]);
+          setCurrentTab('workspace');
+        }}
+        bots={bots}
+        activeBotId={activeBotId}
+        onSelectBot={(id) => {
+          setActiveBotId(id);
+          setActiveChannelId(null);
+          setCurrentTab('workspace');
+        }}
+        onOpenNewBotModal={() => {
+          setEditingBot(null);
+          setBotModalOpen(true);
+        }}
+        channels={channels}
+        activeChannelId={activeChannelId}
+        onSelectChannel={(id) => {
+          setActiveChannelId(id);
+          setActiveBotId(null);
+          setCurrentTab('workspace');
+        }}
+        onOpenNewChannelModal={() => setChannelModalOpen(true)}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-black">
+      <main className="flex-1 flex overflow-hidden bg-[#09090c]">
         {currentTab === 'skills' && (
-          <SkillsManager onSessionCreated={handleSelectSession} />
+          <div className="flex-1 overflow-y-auto p-6">
+            <SkillsManager onSessionCreated={async (id) => {
+              setActiveSession(await api.getSession(id));
+              setCurrentTab('workspace');
+            }} />
+          </div>
         )}
-        {currentTab === 'memory' && <MemoryManager />}
+        {currentTab === 'memory' && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <MemoryManager />
+          </div>
+        )}
         {currentTab === 'schedules' && (
-          <ScheduleManager onSessionCreated={handleSelectSession} />
+          <div className="flex-1 overflow-y-auto p-6">
+            <ScheduleManager onSessionCreated={async (id) => {
+              setActiveSession(await api.getSession(id));
+              setCurrentTab('workspace');
+            }} />
+          </div>
         )}
-        {currentTab === 'bridge' && <BridgeManager activeSessionId={activeSession?.id} />}
-        {currentTab === 'audit' && <AuditViewer />}
-        {currentTab === 'settings' && <ProviderSettings />}
+        {currentTab === 'bridge' && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <BridgeManager activeSessionId={activeSession?.id} />
+          </div>
+        )}
+        {currentTab === 'audit' && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <AuditViewer />
+          </div>
+        )}
+        {currentTab === 'settings' && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <ProviderSettings />
+          </div>
+        )}
 
+        {/* Workspace Central View (AnyWork Chat + Split-pane Agent Computer) */}
         {currentTab === 'workspace' && (
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col">
-            {!activeSession ? (
-              <TaskIntake
-                onSubmitTask={handleCreateSession}
-                isLoading={isLoading}
-                providerAccounts={providerAccounts}
-              />
-            ) : (
-              <div className="w-full flex-1 flex flex-col">
-                {/* Active Task Topbar */}
-                <div className="flex flex-wrap items-center justify-between pb-4 mb-5 border-b border-white/[0.08] gap-3">
-                  <div className="min-w-0 pr-4">
-                    <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 mb-1">
-                      <span>Task #{activeSession.id.slice(0, 8)}</span>
-                      <span>·</span>
-                      <span className="capitalize text-zinc-300 font-semibold">{activeSession.status.replace('_', ' ')}</span>
-                    </div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-white truncate tracking-tight">
-                      {activeSession.task}
-                    </h1>
-                  </div>
-                  <button 
-                    onClick={() => setActiveSession(null)} 
-                    className="inline-flex items-center gap-1.5 bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-white text-xs font-semibold py-2 px-3.5 rounded-xl transition shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>New Task</span>
-                  </button>
-                </div>
+          <div className="flex-1 flex h-full overflow-hidden">
+            <AnyWorkChat
+              activeBot={activeBot}
+              activeChannel={activeChannel}
+              activeSession={activeSession}
+              events={events}
+              artifacts={activeSession?.artifacts || []}
+              pendingApproval={activeSession?.pending_approval}
+              onSendMessage={handleSendMessage}
+              onToggleComputer={() => setIsComputerOpen(!isComputerOpen)}
+              isComputerOpen={isComputerOpen}
+              onOpenBotSettings={() => {
+                setEditingBot(activeBot);
+                setBotModalOpen(true);
+              }}
+              onExportTemplate={handleExportTemplate}
+              onResolveApproval={handleResolveApproval}
+              isLoading={isLoading}
+              bots={bots}
+            />
 
-                {/* Grok Dual-Pane Workspace */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start flex-1 pb-10">
-                  {/* Left Column: Live Agent Activity Stream */}
-                  <section className="lg:col-span-7 min-w-0">
-                    <div className="flex items-center justify-between pb-2 mb-2 px-1">
-                      <div>
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
-                          Live Agent Execution
-                        </span>
-                        <h2 className="text-sm font-bold text-white">Stream & Reasoning</h2>
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 text-xs font-mono text-cyan-400 bg-cyan-950/40 px-2.5 py-0.5 rounded-full border border-cyan-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        <span>Live</span>
-                      </span>
-                    </div>
-                    <ActivityFeed 
-                      events={events} 
-                      sessionStatus={activeSession.status} 
-                      pendingApproval={activeSession.pending_approval} 
-                      onPause={handlePause} 
-                      onResume={handleResume} 
-                      onCancel={handleCancel} 
-                      onResolveApproval={handleResolveApproval} 
-                    />
-                  </section>
-
-                  {/* Right Column: Execution Plan & Deliverables Inspector */}
-                  <aside className="lg:col-span-5 min-w-0 flex flex-col gap-4">
-                    {activeSession.plan && (
-                      <PlanView 
-                        plan={activeSession.plan} 
-                        sessionStatus={activeSession.status} 
-                        onStartExecution={handleStartExecution} 
-                        onDeleteStep={handleDeleteStep} 
-                        onAddStep={handleAddStep} 
-                        onReorderSteps={handleReorderSteps} 
-                      />
-                    )}
-
-                    {usage && (
-                      <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl p-4 shadow-xl">
-                        <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold mb-2">
-                          Resource & Token Telemetry
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
-                            <strong className="text-sm font-bold text-white font-mono">{usage.tool_calls}</strong>
-                            <span className="text-[10px] text-zinc-500 block font-mono">Tool Calls</span>
-                          </div>
-                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
-                            <strong className="text-sm font-bold text-white font-mono">{usage.steps_completed}</strong>
-                            <span className="text-[10px] text-zinc-500 block font-mono">Steps Done</span>
-                          </div>
-                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
-                            <strong className="text-sm font-bold text-cyan-400 font-mono">${usage.estimated_cost_usd.toFixed(4)}</strong>
-                            <span className="text-[10px] text-zinc-500 block font-mono">Est. Cost</span>
-                          </div>
-                          <div className="bg-black/40 border border-white/[0.04] p-2.5 rounded-xl">
-                            <strong className="text-sm font-bold text-zinc-300 font-mono">{usage.runtime_limit_seconds}s</strong>
-                            <span className="text-[10px] text-zinc-500 block font-mono">Time Cap</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <ArtifactPanel artifacts={activeSession.artifacts} sessionId={activeSession.id} />
-                  </aside>
-                </div>
-              </div>
-            )}
+            {/* Split-pane Agent Computer */}
+            <AgentComputerPanel
+              isOpen={isComputerOpen}
+              onClose={() => setIsComputerOpen(false)}
+              botName={activeBot ? activeBot.name : 'assistant'}
+              artifacts={activeSession?.artifacts || []}
+              activeSessionId={activeSession?.id}
+              onTakeover={() => showToast('Human Takeover active. Control browser credentials.')}
+            />
           </div>
         )}
       </main>
 
-      {/* Floating Notification Toast */}
+      {/* Bot Modal */}
+      <BotModal
+        isOpen={botModalOpen}
+        onClose={() => {
+          setBotModalOpen(false);
+          setEditingBot(null);
+        }}
+        bot={editingBot}
+        onSave={handleSaveBot}
+        onDuplicate={handleDuplicateBot}
+        onDelete={handleDeleteBot}
+        onExportTemplate={async (id) => {
+          const b = bots.find(x => x.id === id);
+          if (b) {
+            setActiveBotId(id);
+            await handleExportTemplate();
+          }
+        }}
+      />
+
+      {/* Channel Modal */}
+      <ChannelModal
+        isOpen={channelModalOpen}
+        onClose={() => setChannelModalOpen(false)}
+        bots={bots}
+        onCreateChannel={handleCreateChannel}
+      />
+
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#121216] border border-rose-500/40 text-rose-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fadeIn">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#121216] border border-cyan-500/40 text-cyan-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fadeIn">
+          <AlertCircle className="w-5 h-5 text-cyan-400 shrink-0" />
           <span className="text-xs font-medium">{toastMessage}</span>
-          <button
-            onClick={() => setToastMessage(null)}
-            className="text-zinc-400 hover:text-white ml-2 transition"
-          >
+          <button onClick={() => setToastMessage(null)} className="text-zinc-400 hover:text-white ml-2 transition">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -352,4 +391,5 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
 export default App;

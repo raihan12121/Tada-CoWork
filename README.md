@@ -1,6 +1,6 @@
-# Coagent (Tada-CoWork) 🤖💼
+# AnyWork (Autonomous Work OS) 🤖💼
 
-> A Cowork-style Autonomous Work Agent that plans, executes, and delivers knowledge work across files, spreadsheets, web research, and documents — with strict sandbox isolation, risk-gated approvals, and multi-tier memory.
+> An Always-On, Multi-Agent Autonomous Operating System (Grokbot architecture) that coordinates specialized digital coworkers across web research, spreadsheets, files, and documents — featuring a persistent shared Agent Computer, dual-tier memory, risk-gated approvals, and multi-agent channels.
 
 ---
 

@@ -75,6 +75,8 @@ export interface Session {
   id: string;
   task: string;
   workspace_id: string;
+  bot_id?: string;
+  channel_id?: string;
   parent_session_id?: string;
   status: SessionStatus;
   plan?: Plan;
@@ -213,5 +215,78 @@ export interface SwarmRunResponse {
   synthesis: string;
   artifacts_created: string[];
 }
+
+export interface Bot {
+  id: string;
+  workspace_id: string;
+  name: string;
+  avatar: string;
+  role_tag: string;
+  description: string;
+  folder_name: string;
+  pinned: boolean;
+  is_hidden: boolean;
+  model?: string;
+  enabled_tools: string[];
+  individual_memory: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BotCreate {
+  name: string;
+  avatar?: string;
+  role_tag?: string;
+  description: string;
+  folder_name?: string;
+  pinned?: boolean;
+  is_hidden?: boolean;
+  model?: string;
+  workspace_id?: string;
+  enabled_tools?: string[];
+  individual_memory?: string[];
+}
+
+export interface BotUpdate {
+  name?: string;
+  avatar?: string;
+  role_tag?: string;
+  description?: string;
+  folder_name?: string;
+  pinned?: boolean;
+  is_hidden?: boolean;
+  model?: string;
+  enabled_tools?: string[];
+  individual_memory?: string[];
+}
+
+export interface BotTemplate {
+  name: string;
+  avatar: string;
+  role_tag: string;
+  description: string;
+  folder_name: string;
+  enabled_tools: string[];
+  individual_memory: string[];
+  template_version: string;
+}
+
+export interface Channel {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  bot_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelCreate {
+  name: string;
+  description?: string;
+  bot_ids: string[];
+  workspace_id?: string;
+}
+
 
 

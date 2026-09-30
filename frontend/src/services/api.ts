@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate, McpServer, McpServerCreate, SwarmRunRequest, SwarmRunResponse } from '../types';
+import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate, McpServer, McpServerCreate, SwarmRunRequest, SwarmRunResponse, Bot, BotCreate, BotUpdate, BotTemplate, Channel, ChannelCreate } from '../types';
 
 export type ProviderAccount = {
   id: string; workspace_id: string; provider: string; label: string; auth_type: string;
@@ -476,5 +476,87 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/admin/usage`, { headers: { 'X-Admin-Token': ADMIN_TOKEN } });
     if (!res.ok) throw new Error('Failed to fetch organization usage');
     return res.json();
+  },
+
+  // AnyWork Bots
+  async listBots(): Promise<Bot[]> {
+    const res = await apiFetch(`${API_BASE}/bots`);
+    if (!res.ok) throw new Error('Failed to list bots');
+    return res.json();
+  },
+
+  async createBot(payload: BotCreate): Promise<Bot> {
+    const res = await apiFetch(`${API_BASE}/bots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to create bot');
+    return res.json();
+  },
+
+  async getBot(botId: string): Promise<Bot> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}`);
+    if (!res.ok) throw new Error('Failed to fetch bot');
+    return res.json();
+  },
+
+  async updateBot(botId: string, payload: BotUpdate): Promise<Bot> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to update bot');
+    return res.json();
+  },
+
+  async duplicateBot(botId: string): Promise<Bot> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}/duplicate`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to duplicate bot');
+    return res.json();
+  },
+
+  async deleteBot(botId: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete bot');
+  },
+
+  async exportBotTemplate(botId: string): Promise<BotTemplate> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}/template`);
+    if (!res.ok) throw new Error('Failed to export template');
+    return res.json();
+  },
+
+  async importBotTemplate(template: BotTemplate): Promise<Bot> {
+    const res = await apiFetch(`${API_BASE}/bots/import-template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template)
+    });
+    if (!res.ok) throw new Error('Failed to import template');
+    return res.json();
+  },
+
+  // AnyWork Channels
+  async listChannels(): Promise<Channel[]> {
+    const res = await apiFetch(`${API_BASE}/channels`);
+    if (!res.ok) throw new Error('Failed to list channels');
+    return res.json();
+  },
+
+  async createChannel(payload: ChannelCreate): Promise<Channel> {
+    const res = await apiFetch(`${API_BASE}/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to create channel');
+    return res.json();
+  },
+
+  async deleteChannel(channelId: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/channels/${channelId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete channel');
   }
 };
