@@ -17,10 +17,10 @@ class DBSession(Base):
     
     id = Column(String, primary_key=True)
     task = Column(Text, nullable=False)
-    workspace_id = Column(String, default="default")
+    workspace_id = Column(String, default="default", index=True)
     provider_account_id = Column(String, nullable=True)
     allow_provider_failover = Column(Boolean, default=False)
-    status = Column(String, default="created")
+    status = Column(String, default="created", index=True)
     tool_calls_count = Column(Integer, default=0)
     total_cost_usd = Column(Float, default=0.0)
     enabled_tools_json = Column(Text, default="[]")
@@ -30,7 +30,7 @@ class DBSession(Base):
     max_steps = Column(Integer, default=30)
     max_tool_calls = Column(Integer, default=50)
     max_runtime_seconds = Column(Integer, default=300)
-    created_at = Column(DateTime, default=utc_now)
+    created_at = Column(DateTime, default=utc_now, index=True)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     plans = relationship("DBPlan", back_populates="session", cascade="all, delete-orphan")
@@ -56,9 +56,9 @@ class DBPlan(Base):
     __tablename__ = "plans"
     
     id = Column(String, primary_key=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     version = Column(Integer, default=1)
-    status = Column(String, default="draft")
+    status = Column(String, default="draft", index=True)
     explanation = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now)
     
@@ -69,13 +69,13 @@ class DBStep(Base):
     __tablename__ = "steps"
     
     id = Column(String, primary_key=True)
-    plan_id = Column(String, ForeignKey("plans.id"), nullable=False)
+    plan_id = Column(String, ForeignKey("plans.id"), nullable=False, index=True)
     step_order = Column(Integer, nullable=False)
     description = Column(Text, nullable=False)
     tool = Column(String, nullable=False)
     risk_level = Column(String, default="low")
     dependencies_json = Column(Text, default="[]")
-    status = Column(String, default="pending")
+    status = Column(String, default="pending", index=True)
     result_summary = Column(Text, nullable=True)
     failure_count = Column(Integer, default=0)
     
@@ -85,21 +85,21 @@ class DBToolCall(Base):
     __tablename__ = "tool_calls"
     
     id = Column(String, primary_key=True)
-    session_id = Column(String, nullable=False)
-    step_id = Column(String, nullable=True)
+    session_id = Column(String, nullable=False, index=True)
+    step_id = Column(String, nullable=True, index=True)
     tool = Column(String, nullable=False)
     input_params_json = Column(Text, default="{}")
     output_data_json = Column(Text, nullable=True)
     status = Column(String, default="success")
     risk_level = Column(String, default="low")
     execution_time_ms = Column(Integer, default=0)
-    timestamp = Column(DateTime, default=utc_now)
+    timestamp = Column(DateTime, default=utc_now, index=True)
 
 class DBApproval(Base):
     __tablename__ = "approvals"
     
     id = Column(String, primary_key=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     step_id = Column(String, nullable=True)
     action_type = Column(String, nullable=False)
     description = Column(Text, nullable=False)
@@ -107,7 +107,7 @@ class DBApproval(Base):
     target = Column(String, nullable=False)
     diff = Column(Text, nullable=True)
     risk_level = Column(String, default="high")
-    status = Column(String, default="pending")
+    status = Column(String, default="pending", index=True)
     takeover_mode = Column(Boolean, default=False)
     takeover_url = Column(String, nullable=True)
     requested_at = Column(DateTime, default=utc_now)
@@ -121,7 +121,7 @@ class DBArtifact(Base):
     __tablename__ = "artifacts"
     
     id = Column(String, primary_key=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
     relative_path = Column(String, nullable=False)
@@ -140,8 +140,8 @@ class DBMemoryItem(Base):
     key = Column(String, nullable=True)
     content = Column(Text, nullable=False)
     source_session_id = Column(String, nullable=True)
-    workspace_id = Column(String, default="default")
-    is_active = Column(Boolean, default=True)
+    workspace_id = Column(String, default="default", index=True)
+    is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=utc_now)
     last_used_at = Column(DateTime, nullable=True)
 
@@ -149,11 +149,11 @@ class DBSchedule(Base):
     __tablename__ = "schedules"
     
     id = Column(String, primary_key=True)
-    workspace_id = Column(String, default="default")
+    workspace_id = Column(String, default="default", index=True)
     title = Column(String, nullable=False)
     task_template = Column(Text, nullable=False)
     cron_expression = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, index=True)
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String, nullable=True)
@@ -243,14 +243,29 @@ class DBActivityEvent(Base):
     __tablename__ = "activity_events"
 
     id = Column(String, primary_key=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
-    timestamp = Column(DateTime, default=utc_now)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    timestamp = Column(DateTime, default=utc_now, index=True)
     event_type = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     technical_details_json = Column(Text, nullable=True)
     step_id = Column(String, nullable=True)
 
     session = relationship("DBSession", back_populates="activity_events")
+
+class DBSkill(Base):
+    """Reusable automated skill learned from demonstration or workflow plan."""
+    __tablename__ = "skills"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, default="default", index=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=False)
+    source_session_id = Column(String, nullable=True)
+    parameters_schema_json = Column(Text, default="{}")
+    steps_definition_json = Column(Text, default="[]")
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
 _engine_kwargs = {"echo": False}
 if settings.DATABASE_URL.startswith("sqlite"):
@@ -317,6 +332,25 @@ async def init_db():
             for column, definition in review_additions.items():
                 if column not in review_existing:
                     await conn.execute(text(f"ALTER TABLE connector_reviews ADD COLUMN {column} {definition}"))
+
+            # Create performance indexes idempotently
+            indexes = [
+                "CREATE INDEX IF NOT EXISTS ix_sessions_workspace_id ON sessions (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_sessions_status ON sessions (status)",
+                "CREATE INDEX IF NOT EXISTS ix_sessions_created_at ON sessions (created_at)",
+                "CREATE INDEX IF NOT EXISTS ix_plans_session_id ON plans (session_id)",
+                "CREATE INDEX IF NOT EXISTS ix_steps_plan_id ON steps (plan_id)",
+                "CREATE INDEX IF NOT EXISTS ix_tool_calls_session_id ON tool_calls (session_id)",
+                "CREATE INDEX IF NOT EXISTS ix_tool_calls_timestamp ON tool_calls (timestamp)",
+                "CREATE INDEX IF NOT EXISTS ix_approvals_session_id ON approvals (session_id)",
+                "CREATE INDEX IF NOT EXISTS ix_artifacts_session_id ON artifacts (session_id)",
+                "CREATE INDEX IF NOT EXISTS ix_memory_items_workspace_id ON memory_items (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_schedules_workspace_id ON schedules (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_activity_events_session_id ON activity_events (session_id)",
+                "CREATE INDEX IF NOT EXISTS ix_activity_events_timestamp ON activity_events (timestamp)",
+            ]
+            for idx in indexes:
+                await conn.execute(text(idx))
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:

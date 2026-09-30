@@ -59,6 +59,21 @@ class ExecutorSession:
         self.steps_executed = 0
         self.step_failure_counts: Dict[str, int] = {}
         self.started_at = time.monotonic()
+        self._pending_events: List[DBActivityEvent] = []
+        self._event_flush_lock = asyncio.Lock()
+
+    async def flush_events(self):
+        async with self._event_flush_lock:
+            if not self._pending_events:
+                return
+            batch = self._pending_events[:]
+            self._pending_events.clear()
+        try:
+            async with AsyncSessionLocal() as db:
+                db.add_all(batch)
+                await db.commit()
+        except Exception:
+            pass
 
     async def emit_event(
         self,
@@ -81,23 +96,23 @@ class ExecutorSession:
                 await self.event_callback(event)
             except Exception:
                 pass
-        try:
-            async with AsyncSessionLocal() as db:
-                db.add(DBActivityEvent(
-                    id=event.id,
-                    session_id=event.session_id,
-                    timestamp=event.timestamp,
-                    event_type=event.event_type,
-                    message=event.message,
-                    technical_details_json=json.dumps(event.technical_details) if event.technical_details else None,
-                    step_id=event.step_id,
-                ))
-                await db.commit()
-        except Exception:
-            # Streaming must remain available even if event persistence is
-            # temporarily unavailable; the audit/tool records still capture
-            # the durable execution facts.
-            pass
+        
+        db_item = DBActivityEvent(
+            id=event.id,
+            session_id=event.session_id,
+            timestamp=event.timestamp,
+            event_type=event.event_type,
+            message=event.message,
+            technical_details_json=json.dumps(event.technical_details) if event.technical_details else None,
+            step_id=event.step_id,
+        )
+        async with self._event_flush_lock:
+            self._pending_events.append(db_item)
+            should_flush = len(self._pending_events) >= 5 or event_type in (
+                "done", "error", "approval_required", "artifact_created", "replan_required", "merge_conflict"
+            )
+        if should_flush:
+            await self.flush_events()
 
     def pause(self):
         self.is_paused = True
@@ -249,13 +264,16 @@ class ExecutorSession:
                     else:
                         overall_success = False
 
+        await self.flush_events()
         if overall_success and not self.is_cancelled:
             message = "All plan steps completed successfully."
             if warning_failures:
                 message = f"Plan completed with {len(warning_failures)} non-blocking warning(s); see failed low-risk steps in the activity feed."
             await self.emit_event("done", message, {"plan_id": plan.id, "warnings": warning_failures})
+            await self.flush_events()
             return True
         await self.emit_event("error", "Execution stopped with one or more incomplete plan steps.", {"plan_id": plan.id})
+        await self.flush_events()
         return False
 
     async def _execute_single_step(

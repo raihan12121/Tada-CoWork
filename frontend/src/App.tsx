@@ -24,6 +24,7 @@ export const App: React.FC = () => {
   const [providerAccounts, setProviderAccounts] = useState<ProviderAccount[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const refreshTimerRef = useRef<any>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -72,11 +73,14 @@ export const App: React.FC = () => {
           const event: ActivityEvent = JSON.parse(evt.data);
           setEvents((prev) => [...prev, event]);
 
-          // Refresh session on key milestones
+          // Debounce refresh on key milestones to prevent HTTP storm
           if (['artifact_created', 'approval_required', 'plan_revised', 'done', 'error'].includes(event.event_type)) {
-            api.getSession(activeSessionId).then(setActiveSession).catch(console.error);
-            api.listSessions().then(setSessions).catch(console.error);
-            api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
+            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = setTimeout(() => {
+              api.getSession(activeSessionId).then(setActiveSession).catch(console.error);
+              api.listSessions().then(setSessions).catch(console.error);
+              api.getSessionUsage(activeSessionId).then(setUsage).catch(console.error);
+            }, 200);
           }
         } catch (e) {
           console.error(e);

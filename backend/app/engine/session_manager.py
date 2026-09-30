@@ -478,12 +478,133 @@ class SessionManager:
         async with AsyncSessionLocal() as db:
             stmt = select(DBSession).order_by(DBSession.created_at.desc()).limit(limit)
             res = await db.execute(stmt)
-            items = res.scalars().all()
+            sessions = res.scalars().all()
+            if not sessions:
+                return []
+
+            session_ids = [s.id for s in sessions]
+
+            # 1. Batch fetch latest plan for all sessions
+            plans_stmt = select(DBPlan).where(DBPlan.session_id.in_(session_ids)).order_by(DBPlan.version.desc())
+            plans_res = await db.execute(plans_stmt)
+            latest_plans: Dict[str, DBPlan] = {}
+            for plan in plans_res.scalars().all():
+                if plan.session_id not in latest_plans:
+                    latest_plans[plan.session_id] = plan
+
+            # 2. Batch fetch steps for all latest plans
+            plan_ids = [p.id for p in latest_plans.values()]
+            plan_steps: Dict[str, List[StepBase]] = {p_id: [] for p_id in plan_ids}
+            if plan_ids:
+                steps_stmt = select(DBStep).where(DBStep.plan_id.in_(plan_ids)).order_by(DBStep.step_order.asc())
+                steps_res = await db.execute(steps_stmt)
+                for s in steps_res.scalars().all():
+                    plan_steps.setdefault(s.plan_id, []).append(
+                        StepBase(
+                            id=s.id,
+                            step_order=s.step_order,
+                            description=s.description,
+                            tool=s.tool,
+                            risk_level=s.risk_level,  # type: ignore
+                            dependencies=json.loads(s.dependencies_json or "[]"),
+                            status=s.status,  # type: ignore
+                            result_summary=s.result_summary,
+                        )
+                    )
+
+            # 3. Batch fetch artifacts for all sessions
+            art_stmt = select(DBArtifact).where(DBArtifact.session_id.in_(session_ids))
+            art_res = await db.execute(art_stmt)
+            session_artifacts: Dict[str, List[ArtifactModel]] = {s_id: [] for s_id in session_ids}
+            for a in art_res.scalars().all():
+                session_artifacts.setdefault(a.session_id, []).append(
+                    ArtifactModel(
+                        id=a.id,
+                        session_id=a.session_id,
+                        name=a.name,
+                        file_type=a.file_type,
+                        relative_path=a.relative_path,
+                        file_size_bytes=a.file_size_bytes,
+                        created_at=a.created_at,
+                        summary=a.summary,
+                        version=a.version,
+                    )
+                )
+
+            # 4. Batch fetch pending approvals for all sessions
+            appr_stmt = select(DBApproval).where(
+                DBApproval.session_id.in_(session_ids),
+                DBApproval.status == "pending"
+            ).order_by(DBApproval.requested_at.desc())
+            appr_res = await db.execute(appr_stmt)
+            session_approvals: Dict[str, DBApproval] = {}
+            for appr in appr_res.scalars().all():
+                if appr.session_id not in session_approvals:
+                    session_approvals[appr.session_id] = appr
+
+            # Build full models in memory
             results = []
-            for item in items:
-                sess = await self.get_session(item.id)
-                if sess:
-                    results.append(sess)
+            for db_sess in sessions:
+                db_plan = latest_plans.get(db_sess.id)
+                plan_model = None
+                if db_plan:
+                    plan_model = PlanModel(
+                        id=db_plan.id,
+                        session_id=db_sess.id,
+                        version=db_plan.version,
+                        status=db_plan.status,
+                        explanation=db_plan.explanation,
+                        steps=plan_steps.get(db_plan.id, []),
+                        created_at=db_plan.created_at,
+                    )
+
+                db_appr = session_approvals.get(db_sess.id)
+                pending_appr = None
+                if db_appr:
+                    from app.models.schemas import ApprovalRequest
+                    pending_appr = ApprovalRequest(
+                        id=db_appr.id,
+                        session_id=db_appr.session_id,
+                        step_id=db_appr.step_id,
+                        action_type=db_appr.action_type,
+                        description=db_appr.description,
+                        consequence=db_appr.consequence,
+                        target=db_appr.target,
+                        diff=db_appr.diff,
+                        risk_level=db_appr.risk_level,  # type: ignore
+                        status=db_appr.status,  # type: ignore
+                        takeover_mode=db_appr.takeover_mode,
+                        takeover_url=db_appr.takeover_url,
+                        requested_at=db_appr.requested_at,
+                        resolved_at=db_appr.resolved_at,
+                        actor=db_appr.actor,
+                        user_feedback=db_appr.user_feedback,
+                    )
+
+                results.append(
+                    SessionModel(
+                        id=db_sess.id,
+                        task=db_sess.task,
+                        workspace_id=db_sess.workspace_id,
+                        provider_account_id=db_sess.provider_account_id,
+                        allow_provider_failover=bool(db_sess.allow_provider_failover),
+                        status=db_sess.status,  # type: ignore
+                        plan=plan_model,
+                        artifacts=session_artifacts.get(db_sess.id, []),
+                        pending_approval=pending_appr,
+                        created_at=db_sess.created_at,
+                        updated_at=db_sess.updated_at,
+                        tool_calls_count=db_sess.tool_calls_count,
+                        total_cost_usd=db_sess.total_cost_usd,
+                        enabled_tools=json.loads(db_sess.enabled_tools_json or "[]"),
+                        granted_folders=json.loads(db_sess.granted_folders_json or "[]"),
+                        granted_scopes=json.loads(db_sess.granted_scopes_json or "[]"),
+                        granted_domains=json.loads(db_sess.granted_domains_json or "[]"),
+                        max_steps=db_sess.max_steps or 30,
+                        max_tool_calls=db_sess.max_tool_calls or 50,
+                        max_runtime_seconds=db_sess.max_runtime_seconds or 300,
+                    )
+                )
             return results
 
     async def get_activity_events(self, session_id: str, limit: int = 200) -> List[ActivityFeedEvent]:
