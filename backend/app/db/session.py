@@ -18,6 +18,7 @@ class DBSession(Base):
     id = Column(String, primary_key=True)
     task = Column(Text, nullable=False)
     workspace_id = Column(String, default="default", index=True)
+    parent_session_id = Column(String, nullable=True, index=True)
     provider_account_id = Column(String, nullable=True)
     allow_provider_failover = Column(Boolean, default=False)
     status = Column(String, default="created", index=True)
@@ -267,6 +268,23 @@ class DBSkill(Base):
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
+class DBMcpServer(Base):
+    """External or local Model Context Protocol (MCP) server integration."""
+    __tablename__ = "mcp_servers"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, nullable=False, default="default", index=True)
+    name = Column(String, nullable=False, index=True)
+    server_url = Column(String, nullable=False)
+    transport = Column(String, default="http")
+    auth_header_json = Column(Text, default="{}")
+    status = Column(String, default="connected")
+    last_synced_at = Column(DateTime, nullable=True)
+    tools_count = Column(Integer, default=0)
+    discovered_tools_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
 _engine_kwargs = {"echo": False}
 if settings.DATABASE_URL.startswith("sqlite"):
     # SQLite is the documented local runtime. Give short-lived background
@@ -294,6 +312,7 @@ async def init_db():
                 "max_runtime_seconds": "INTEGER DEFAULT 300",
                 "granted_scopes_json": "TEXT DEFAULT '[]'",
                 "granted_domains_json": "TEXT DEFAULT '[]'",
+                "parent_session_id": "TEXT",
             }
             for column, definition in additions.items():
                 if column not in existing:
@@ -336,6 +355,7 @@ async def init_db():
             # Create performance indexes idempotently
             indexes = [
                 "CREATE INDEX IF NOT EXISTS ix_sessions_workspace_id ON sessions (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_sessions_parent_session_id ON sessions (parent_session_id)",
                 "CREATE INDEX IF NOT EXISTS ix_sessions_status ON sessions (status)",
                 "CREATE INDEX IF NOT EXISTS ix_sessions_created_at ON sessions (created_at)",
                 "CREATE INDEX IF NOT EXISTS ix_plans_session_id ON plans (session_id)",
@@ -346,11 +366,13 @@ async def init_db():
                 "CREATE INDEX IF NOT EXISTS ix_artifacts_session_id ON artifacts (session_id)",
                 "CREATE INDEX IF NOT EXISTS ix_memory_items_workspace_id ON memory_items (workspace_id)",
                 "CREATE INDEX IF NOT EXISTS ix_schedules_workspace_id ON schedules (workspace_id)",
+                "CREATE INDEX IF NOT EXISTS ix_mcp_servers_workspace_id ON mcp_servers (workspace_id)",
                 "CREATE INDEX IF NOT EXISTS ix_activity_events_session_id ON activity_events (session_id)",
                 "CREATE INDEX IF NOT EXISTS ix_activity_events_timestamp ON activity_events (timestamp)",
             ]
             for idx in indexes:
                 await conn.execute(text(idx))
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:

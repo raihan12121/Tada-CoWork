@@ -1,4 +1,4 @@
-import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate } from '../types';
+import type { Session, MemoryItem, Schedule, BridgeStatus, ActivityEvent, Plan, RiskLevel, Skill, SkillCreate, McpServer, McpServerCreate, SwarmRunRequest, SwarmRunResponse } from '../types';
 
 export type ProviderAccount = {
   id: string; workspace_id: string; provider: string; label: string; auth_type: string;
@@ -336,6 +336,46 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/skills/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete skill');
   },
+
+  // Model Context Protocol (MCP) Hub
+  async listMcpServers(workspaceId = 'default'): Promise<McpServer[]> {
+    const res = await apiFetch(`${API_BASE}/mcp/servers?workspace_id=${encodeURIComponent(workspaceId)}`);
+    if (!res.ok) throw new Error('Failed to list MCP servers');
+    return res.json();
+  },
+
+  async registerMcpServer(payload: McpServerCreate): Promise<McpServer> {
+    const res = await apiFetch(`${API_BASE}/mcp/servers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to register MCP server');
+    return res.json();
+  },
+
+  async syncMcpServer(id: string): Promise<McpServer> {
+    const res = await apiFetch(`${API_BASE}/mcp/servers/${encodeURIComponent(id)}/sync`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to sync MCP server');
+    return res.json();
+  },
+
+  async deleteMcpServer(id: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete MCP server');
+  },
+
+  // Multi-Agent Swarm Orchestration
+  async runSwarm(payload: SwarmRunRequest): Promise<SwarmRunResponse> {
+    const res = await apiFetch(`${API_BASE}/swarm/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to execute agent swarm');
+    return res.json();
+  },
+
 
 
   // Bridge

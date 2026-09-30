@@ -9,7 +9,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import update
@@ -23,6 +23,8 @@ from app.db.session import AsyncSessionLocal, DBToolCall, DBSession
 from app.config import settings
 from app.core.connector_policy import connector_is_allowed
 from app.core.identity import Principal, require_workspace_access
+from app.mcp.mcp_manager import mcp_manager
+from app.models.schemas import McpServerModel, McpServerCreate
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -37,6 +39,46 @@ class JsonRpcRequest(BaseModel):
 @router.get("/tools")
 async def list_mcp_tools():
     return {"jsonrpc": "2.0", "result": {"tools": tool_registry.get_all_schemas()}}
+
+
+@router.get("/servers", response_model=List[McpServerModel])
+async def list_mcp_servers(request: Request, workspace_id: str = "default"):
+    principal = getattr(request.state, "principal", Principal("anonymous", "default", frozenset({"*"}), frozenset({"local_dev"})))
+    try:
+        require_workspace_access(principal, workspace_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Workspace access denied") from exc
+    return await mcp_manager.list_servers(workspace_id)
+
+
+@router.post("/servers", response_model=McpServerModel)
+async def register_mcp_server(request: Request, payload: McpServerCreate):
+    principal = getattr(request.state, "principal", Principal("anonymous", "default", frozenset({"*"}), frozenset({"local_dev"})))
+    try:
+        require_workspace_access(principal, payload.workspace_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Workspace access denied") from exc
+    try:
+        return await mcp_manager.register_server(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/servers/{server_id}/sync", response_model=McpServerModel)
+async def sync_mcp_server(request: Request, server_id: str):
+    res = await mcp_manager.sync_server(server_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    return res
+
+
+@router.delete("/servers/{server_id}")
+async def delete_mcp_server(request: Request, server_id: str):
+    deleted = await mcp_manager.delete_server(server_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    return {"deleted": True, "server_id": server_id}
+
 
 
 @router.post("/rpc")

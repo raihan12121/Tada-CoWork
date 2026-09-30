@@ -75,6 +75,7 @@ export interface Session {
   id: string;
   task: string;
   workspace_id: string;
+  parent_session_id?: string;
   status: SessionStatus;
   plan?: Plan;
   artifacts: Artifact[];
@@ -163,4 +164,54 @@ export interface SkillRunRequest {
   parameters?: Record<string, any>;
   workspace_id?: string;
 }
+
+export interface McpServer {
+  id: string;
+  workspace_id: string;
+  name: string;
+  server_url: string;
+  transport: string;
+  status: string;
+  last_synced_at?: string;
+  tools_count: number;
+  discovered_tools: Array<{
+    name: string;
+    description?: string;
+    parameters?: any;
+    risk_level?: RiskLevel;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpServerCreate {
+  name: string;
+  server_url: string;
+  workspace_id?: string;
+  transport?: string;
+  auth_headers?: Record<string, string>;
+}
+
+export interface SwarmRunRequest {
+  goal: string;
+  workspace_id?: string;
+  subtasks?: Array<{
+    name: string;
+    subtask_description: string;
+    context?: string;
+    tools_allowed?: string[];
+  }>;
+  provider_account_id?: string;
+  allow_provider_failover?: boolean;
+}
+
+export interface SwarmRunResponse {
+  master_session_id: string;
+  goal: string;
+  worker_session_ids: string[];
+  status: string;
+  synthesis: string;
+  artifacts_created: string[];
+}
+
 

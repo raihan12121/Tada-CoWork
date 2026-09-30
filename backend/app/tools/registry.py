@@ -13,6 +13,7 @@ from app.connectors.github import GitHubConnector
 from app.connectors.slack import SlackConnector, WebhookConnector
 from app.connectors.email import GmailConnector, OutlookConnector
 from app.tools.ocr_extract import OCRExtractTool
+from app.tools.swarm_delegate import DelegateSubtaskTool
 
 class ToolRegistry:
     def __init__(self):
@@ -40,16 +41,20 @@ class ToolRegistry:
             GoogleDriveConnector(),
             GitHubConnector(),
             SlackConnector(),
-            WebhookConnector()
-            ,GmailConnector()
-            ,OutlookConnector()
-            ,OCRExtractTool()
+            WebhookConnector(),
+            GmailConnector(),
+            OutlookConnector(),
+            OCRExtractTool(),
+            DelegateSubtaskTool()
         ]
         for t in default_tools:
             self.register_tool(t)
 
     def register_tool(self, tool: BaseTool):
         self._tools[tool.name] = tool
+
+    def unregister_tool(self, name: str):
+        self._tools.pop(name, None)
 
     def get_tool(self, name: str) -> Optional[BaseTool]:
         return self._tools.get(name)

@@ -16,12 +16,14 @@ from app.api.mcp import router as mcp_router
 from app.api.settings_api import router as settings_router
 from app.api.provider_accounts import router as provider_accounts_router
 from app.api.skills import router as skills_router
+from app.api.swarm import router as swarm_router
 from app.engine.scheduler import scheduler_engine
 from app.db.session import AsyncSessionLocal, DBOrganization
 from sqlalchemy import select
 from app.core.org_policy import org_policy_manager
 from app.memory.long_term_memory import long_term_memory
 from app.engine.session_manager import session_manager
+from app.mcp.mcp_manager import mcp_manager
 from app.core.tracing import new_trace_id, set_trace_id, reset_trace_id
 from app.core.identity import anonymous_principal, parse_identity_token, identity_verification_configured
 
@@ -72,6 +74,7 @@ async def lifespan(app: FastAPI):
     await long_term_memory.load_workspace_settings()
     await session_manager.recover_interrupted_sessions()
     await scheduler_engine.start()
+    await mcp_manager.sync_all_servers()
     yield
     await scheduler_engine.stop()
 
@@ -155,6 +158,7 @@ app.include_router(mcp_router, prefix=settings.API_V1_STR)
 app.include_router(settings_router, prefix=settings.API_V1_STR)
 app.include_router(provider_accounts_router, prefix=settings.API_V1_STR)
 app.include_router(skills_router, prefix=settings.API_V1_STR)
+app.include_router(swarm_router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

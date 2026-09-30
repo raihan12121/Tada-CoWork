@@ -130,6 +130,7 @@ class ConnectorModel(BaseModel):
 class SessionCreate(BaseModel):
     task: str = Field(..., min_length=1)
     workspace_id: str = "default"
+    parent_session_id: Optional[str] = None
     provider_account_id: Optional[str] = None
     allow_provider_failover: bool = False
     granted_folders: List[str] = Field(default_factory=list)
@@ -148,6 +149,7 @@ class SessionModel(BaseModel):
     id: str
     task: str
     workspace_id: str = "default"
+    parent_session_id: Optional[str] = None
     provider_account_id: Optional[str] = None
     allow_provider_failover: bool = False
     status: SessionStatus = "created"
@@ -210,3 +212,45 @@ class SkillCreate(BaseModel):
 class SkillRunRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
     provider_account_id: Optional[str] = None
+
+class McpServerModel(BaseModel):
+    id: str
+    workspace_id: str = "default"
+    name: str
+    server_url: str
+    transport: str = "http"  # http, sse, stdio
+    status: str = "connected"
+    last_synced_at: Optional[datetime] = None
+    tools_count: int = 0
+    discovered_tools: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+class McpServerCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    server_url: str = Field(..., min_length=1)
+    workspace_id: str = "default"
+    transport: str = "http"
+    auth_headers: Dict[str, str] = Field(default_factory=dict)
+
+class SwarmSubtask(BaseModel):
+    name: str
+    subtask_description: str
+    context: Optional[str] = None
+    tools_allowed: Optional[List[str]] = None
+
+class SwarmRunRequest(BaseModel):
+    goal: str = Field(..., min_length=1)
+    workspace_id: str = "default"
+    subtasks: List[SwarmSubtask] = Field(default_factory=list)
+    provider_account_id: Optional[str] = None
+    allow_provider_failover: bool = False
+
+class SwarmRunResponse(BaseModel):
+    master_session_id: str
+    goal: str
+    worker_session_ids: List[str] = Field(default_factory=list)
+    status: str = "completed"
+    synthesis: str
+    artifacts_created: List[str] = Field(default_factory=list)
+
