@@ -47,6 +47,8 @@ data/
 *.sqlite3
 *.db
 *.log
+*_transcript.json
+*_full.txt
 .env
 .env.*
 !.env.example
