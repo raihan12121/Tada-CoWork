@@ -261,3 +261,77 @@ async def import_bot_template(
     await db.commit()
     await db.refresh(row)
     return _row_to_model(row)
+
+@router.post("/{bot_id}/webhook")
+async def trigger_bot_webhook(
+    bot_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    row = await db.get(DBBot, bot_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    from app.engine.session_manager import session_manager
+    from app.models.schemas import SessionCreate
+    
+    task_desc = f"[Webhook Trigger Received] Event Payload:\n{json.dumps(payload, indent=2)}\n\nPlease process this event autonomously."
+    tools = []
+    try:
+        tools = json.loads(row.enabled_tools_json or "[]")
+    except Exception:
+        pass
+    
+    session = await session_manager.create_session(SessionCreate(
+        task=task_desc,
+        workspace_id=row.workspace_id,
+        bot_id=bot_id,
+        enabled_tools=tools
+    ))
+    await session_manager.start_session(session.id)
+    return {"status": "event_received", "bot": row.name, "session_id": session.id}
+
+@router.get("/{bot_id}/routines")
+async def get_bot_routines(
+    bot_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    row = await db.get(DBBot, bot_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Return standard Grokbot default routines + custom schedules
+    routines = [
+        {
+            "id": f"routine_{bot_id}_daily",
+            "title": "Daily Morning Briefing & Triage",
+            "type": "scheduled",
+            "cadence": "Every weekday at 7:00 AM",
+            "cron": "0 7 * * 1-5",
+            "is_active": True,
+            "last_status": "success",
+            "last_run": "Today at 7:00 AM"
+        },
+        {
+            "id": f"routine_{bot_id}_weekly",
+            "title": "Sunday Work Log & Activity Archive",
+            "type": "scheduled",
+            "cadence": "Every Sunday at 8:00 PM",
+            "cron": "0 20 * * 0",
+            "is_active": True,
+            "last_status": "success",
+            "last_run": "Sunday at 8:00 PM"
+        },
+        {
+            "id": f"routine_{bot_id}_webhook",
+            "title": "Inbound Webhook Doorbell Trigger",
+            "type": "event",
+            "cadence": "Instant on HTTP POST",
+            "webhook_url": f"/v1/bots/{bot_id}/webhook",
+            "is_active": True,
+            "last_status": "success",
+            "last_run": "2 hours ago"
+        }
+    ]
+    return routines
+

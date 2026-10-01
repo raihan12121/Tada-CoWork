@@ -175,6 +175,8 @@ class DBConnector(Base):
     status = Column(String, default="active")
     granted_at = Column(DateTime, default=utc_now)
     last_used_at = Column(DateTime, nullable=True)
+    config_json = Column(Text, default="{}")
+    allowed_bots_json = Column(Text, default='["all"]')
 
 class DBOrganization(Base):
     __tablename__ = "organizations"
@@ -388,6 +390,16 @@ async def init_db():
             for column, definition in review_additions.items():
                 if column not in review_existing:
                     await conn.execute(text(f"ALTER TABLE connector_reviews ADD COLUMN {column} {definition}"))
+
+            result = await conn.execute(text("PRAGMA table_info(connectors)"))
+            connector_existing = {row[1] for row in result.fetchall()}
+            connector_additions = {
+                "config_json": "TEXT DEFAULT '{}'",
+                "allowed_bots_json": "TEXT DEFAULT '[\"all\"]'",
+            }
+            for column, definition in connector_additions.items():
+                if column not in connector_existing:
+                    await conn.execute(text(f"ALTER TABLE connectors ADD COLUMN {column} {definition}"))
 
             # Create performance indexes idempotently
             indexes = [

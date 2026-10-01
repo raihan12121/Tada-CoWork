@@ -3,28 +3,24 @@ import {
   Plus, 
   BrainCircuit, 
   CalendarClock, 
-  HardDrive, 
-  ShieldCheck, 
   Settings, 
   ChevronRight, 
-  ChevronDown,
+  ChevronDown, 
   Zap, 
   Sparkles, 
   PanelLeftClose, 
   PanelLeftOpen, 
-  TerminalSquare, 
   Pin, 
   Folder, 
   Hash, 
   EyeOff, 
-  UserPlus 
+  UserPlus,
+  Webhook
 } from 'lucide-react';
 import type { Session, Bot, Channel } from '../types';
 import { api } from '../services/api';
 
 interface SidebarProps {
-  currentTab: string;
-  setCurrentTab: (tab: string) => void;
   sessions: Session[];
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -37,20 +33,34 @@ interface SidebarProps {
   activeChannelId: string | null;
   onSelectChannel: (channelId: string) => void;
   onOpenNewChannelModal: () => void;
+  onOpenConnectionsModal: () => void;
+  onOpenRoutinesModal: () => void;
+  onOpenMemoryModal: () => void;
+  onOpenSkillsModal: () => void;
+  onOpenSettingsModal: () => void;
 }
 
-const navItems = [
-  { id: 'workspace', label: 'Workspace', icon: TerminalSquare },
-  { id: 'skills', label: 'Skills & Swarms', icon: Sparkles },
-  { id: 'memory', label: 'Memory (Global)', icon: BrainCircuit },
-  { id: 'schedules', label: 'Routines & Cadence', icon: CalendarClock },
-  { id: 'bridge', label: 'Local Bridge', icon: HardDrive },
-  { id: 'audit', label: 'Safety & Audit', icon: ShieldCheck },
-];
+// Polished Bot Avatar Pod
+const BotAvatarBadge: React.FC<{ avatar: string; isSelected?: boolean; size?: 'sm' | 'md' }> = ({
+  avatar,
+  isSelected = false,
+  size = 'md'
+}) => {
+  const sizeClasses = size === 'sm' ? 'w-6 h-6 text-xs' : 'w-7 h-7 text-sm';
+  return (
+    <div 
+      className={`${sizeClasses} rounded-lg flex items-center justify-center shrink-0 transition-all duration-150 ${
+        isSelected 
+          ? 'bg-gradient-to-b from-white/20 to-white/10 text-white shadow-xs border border-white/25' 
+          : 'bg-white/[0.06] border border-white/[0.08] text-zinc-300 group-hover:border-white/15 group-hover:bg-white/[0.09]'
+      }`}
+    >
+      <span className="leading-none select-none">{avatar}</span>
+    </div>
+  );
+};
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
-  currentTab, 
-  setCurrentTab, 
   sessions, 
   activeSessionId: _activeSessionId, 
   onSelectSession: _onSelectSession, 
@@ -62,7 +72,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   channels,
   activeChannelId,
   onSelectChannel,
-  onOpenNewChannelModal
+  onOpenNewChannelModal,
+  onOpenConnectionsModal,
+  onOpenRoutinesModal,
+  onOpenMemoryModal,
+  onOpenSkillsModal,
+  onOpenSettingsModal
 }) => {
   const [planTier, setPlanTier] = useState<any>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -103,24 +118,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }`}
     >
       {/* Brand Header */}
-      <div className="h-14 px-3 flex items-center justify-between border-b border-white/[0.06]">
+      <div className="h-14 px-3 flex items-center justify-between border-b border-white/[0.06] bg-black/40">
         {!isCollapsed ? (
           <div className="flex items-center gap-2.5 pl-1">
-            {/* AnyWork Grokbot Angular Emblem */}
-            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-black text-sm tracking-tighter shadow-md">
-              <span className="transform -skew-x-12">/</span>
+            {/* AnyWork Grokbot Angular Slash Emblem */}
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 flex items-center justify-center text-black font-black text-sm tracking-tighter shadow-[0_2px_8px_rgba(255,255,255,0.12)]">
+              <span className="transform -skew-x-12 select-none">/</span>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-sm tracking-tight text-white">AnyWork</span>
-                <span className="text-[10px] font-mono text-zinc-400 bg-white/[0.08] px-1.5 py-0.5 rounded">v1.1</span>
+                <span className="font-extrabold text-[13px] tracking-tight text-white">AnyWork</span>
+                <span className="text-[10px] font-mono text-zinc-400 bg-white/[0.06] border border-white/[0.08] px-1.5 py-0.2 rounded">v1.1</span>
               </div>
             </div>
           </div>
         ) : (
           <div className="w-full flex justify-center">
-            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-black text-sm">
-              <span className="transform -skew-x-12">/</span>
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 flex items-center justify-center text-black font-black text-sm shadow-md">
+              <span className="transform -skew-x-12 select-none">/</span>
             </div>
           </div>
         )}
@@ -134,20 +149,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons: New Task, New Bot, Channel */}
       <div className="p-2.5 space-y-1.5">
         <button
           onClick={onNewSession}
-          className={`w-full flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 font-bold text-xs py-2 rounded-xl transition shadow-sm ${
+          className={`w-full flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-100 active:scale-[0.985] font-semibold text-xs py-2 rounded-xl transition shadow-[0_2px_10px_rgba(255,255,255,0.15)] ${
             isCollapsed ? 'px-0' : 'px-3'
           }`}
-          title="New Task"
+          title="New Task (Cmd+K)"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
           {!isCollapsed && (
             <>
-              <span>New Task</span>
-              <span className="ml-auto text-[10px] text-zinc-500 font-mono">⌘K</span>
+              <span className="tracking-tight font-medium">New Task</span>
+              <span className="ml-auto text-[10px] text-zinc-500 font-mono bg-zinc-200/60 px-1 rounded">⌘K</span>
             </>
           )}
         </button>
@@ -156,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="grid grid-cols-2 gap-1.5">
             <button
               onClick={onOpenNewBotModal}
-              className="flex items-center justify-center gap-1 bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 text-[11px] font-medium py-1.5 rounded-lg transition border border-white/[0.06]"
+              className="flex items-center justify-center gap-1.5 bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.985] text-zinc-300 hover:text-white text-[11px] font-medium py-1.5 rounded-lg transition border border-white/[0.06]"
               title="Create New Bot"
             >
               <UserPlus className="w-3.5 h-3.5 text-cyan-400" />
@@ -164,7 +179,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               onClick={onOpenNewChannelModal}
-              className="flex items-center justify-center gap-1 bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 text-[11px] font-medium py-1.5 rounded-lg transition border border-white/[0.06]"
+              className="flex items-center justify-center gap-1.5 bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.985] text-zinc-300 hover:text-white text-[11px] font-medium py-1.5 rounded-lg transition border border-white/[0.06]"
               title="Create Channel"
             >
               <Hash className="w-3.5 h-3.5 text-indigo-400" />
@@ -174,61 +189,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Main Scroll Area */}
+      {/* Main Scroll Area: Bots, Channels, Folders */}
       <div className="flex-1 min-h-0 overflow-y-auto px-2 space-y-3 pt-1">
-        {/* Navigation Tabs */}
-        <nav className="space-y-0.5">
-          {navItems.map(({ id, label, icon: Icon }) => {
-            const isActive = currentTab === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setCurrentTab(id)}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                  isActive
-                    ? 'bg-white/[0.1] text-white shadow-xs'
-                    : 'text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200'
-                } ${isCollapsed ? 'justify-center' : ''}`}
-                title={isCollapsed ? label : undefined}
-              >
-                <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-zinc-400'}`} />
-                {!isCollapsed && <span>{label}</span>}
-                {!isCollapsed && isActive && <ChevronRight className="w-3 h-3 ml-auto text-zinc-500" />}
-              </button>
-            );
-          })}
-        </nav>
-
-        {!isCollapsed && (
+        {!isCollapsed ? (
           <>
             {/* PINNED BOTS */}
             {pinnedBots.length > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 px-2 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
-                  <Pin className="w-3 h-3 text-cyan-400" />
-                  <span>Pinned Bots</span>
+              <div className="space-y-0.5">
+                <div className="flex items-center justify-between px-2.5 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+                  <div className="flex items-center gap-1.5">
+                    <Pin className="w-3 h-3 text-cyan-400" />
+                    <span>Pinned Bots</span>
+                  </div>
+                  <span className="text-[10px] text-zinc-600 font-mono">{pinnedBots.length}</span>
                 </div>
                 {pinnedBots.map((b) => {
-                  const isSelected = activeBotId === b.id && currentTab === 'workspace';
+                  const isSelected = activeBotId === b.id;
                   return (
                     <button
                       key={b.id}
-                      onClick={() => {
-                        onSelectBot(b.id);
-                        setCurrentTab('workspace');
-                      }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition text-left ${
+                      onClick={() => onSelectBot(b.id)}
+                      className={`linear-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition text-left group ${
                         isSelected
-                          ? 'bg-white/[0.1] text-white border border-white/[0.08]'
+                          ? 'active bg-white/[0.09] text-white'
                           : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                       }`}
                     >
-                      <span className="text-base">{b.avatar}</span>
+                      <BotAvatarBadge avatar={b.avatar} isSelected={isSelected} size="md" />
                       <div className="min-w-0 flex-1 truncate">
-                        <p className="text-xs font-semibold truncate text-zinc-200">{b.name}</p>
+                        <p className={`text-xs font-medium truncate ${isSelected ? 'text-white' : 'text-zinc-200'}`}>{b.name}</p>
                         <p className="text-[10px] text-zinc-500 truncate">{b.role_tag}</p>
                       </div>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]' : 'bg-emerald-400/80'}`} />
                     </button>
                   );
                 })}
@@ -237,32 +229,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* CHANNELS / GROUP CHATS */}
             {channels.length > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between px-2 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+              <div className="space-y-0.5">
+                <div className="flex items-center justify-between px-2.5 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
                   <div className="flex items-center gap-1.5">
                     <Hash className="w-3 h-3 text-indigo-400" />
                     <span>Channels</span>
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono">{channels.length}</span>
+                  <span className="text-[10px] text-zinc-600 font-mono">{channels.length}</span>
                 </div>
                 {channels.map((ch) => {
-                  const isSelected = activeChannelId === ch.id && currentTab === 'workspace';
+                  const isSelected = activeChannelId === ch.id;
                   return (
                     <button
                       key={ch.id}
-                      onClick={() => {
-                        onSelectChannel(ch.id);
-                        setCurrentTab('workspace');
-                      }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition text-left ${
+                      onClick={() => onSelectChannel(ch.id)}
+                      className={`linear-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition text-left ${
                         isSelected
-                          ? 'bg-indigo-500/15 text-white border border-indigo-500/30'
+                          ? 'active bg-indigo-500/15 text-white border border-indigo-500/30'
                           : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                       }`}
                     >
-                      <Hash className="w-3.5 h-3.5 text-zinc-500" />
+                      <div className="w-6 h-6 rounded-md bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                        <Hash className="w-3.5 h-3.5 text-indigo-400" />
+                      </div>
                       <span className="text-xs font-medium truncate flex-1">{ch.name}</span>
-                      <span className="text-[10px] text-zinc-600 font-mono">{ch.bot_ids.length} bots</span>
+                      <span className="text-[10px] text-zinc-500 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded">{ch.bot_ids.length} bots</span>
                     </button>
                   );
                 })}
@@ -271,8 +262,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* FOLDERS & BOTS */}
             {Object.keys(foldersMap).length > 0 && (
-              <div className="space-y-2">
-                <div className="px-2 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+              <div className="space-y-2 pt-1">
+                <div className="px-2.5 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
                   Team Folders
                 </div>
                 {Object.entries(foldersMap).map(([folderName, folderBots]) => {
@@ -281,36 +272,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div key={folderName} className="space-y-0.5">
                       <button
                         onClick={() => toggleFolder(folderName)}
-                        className="w-full flex items-center justify-between px-2 py-1 text-xs text-zinc-400 hover:text-white rounded-md hover:bg-white/[0.03]"
+                        className="w-full flex items-center justify-between px-2.5 py-1 text-xs text-zinc-400 hover:text-white rounded-md hover:bg-white/[0.03] transition"
                       >
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <Folder className="w-3.5 h-3.5 text-zinc-500" />
                           <span className="text-xs font-semibold">{folderName}</span>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-zinc-600 font-mono">{folderBots.length}</span>
-                          {isFolded ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {isFolded ? <ChevronRight className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
                         </div>
                       </button>
 
                       {!isFolded && (
-                        <div className="pl-3 space-y-0.5 border-l border-white/[0.06] ml-2">
+                        <div className="pl-2 space-y-0.5 ml-2 border-l border-white/[0.06]">
                           {folderBots.map((b) => {
-                            const isSelected = activeBotId === b.id && currentTab === 'workspace';
+                            const isSelected = activeBotId === b.id;
                             return (
                               <button
                                 key={b.id}
-                                onClick={() => {
-                                  onSelectBot(b.id);
-                                  setCurrentTab('workspace');
-                                }}
-                                className={`w-full flex items-center gap-2 px-2 py-1 rounded-lg transition text-left ${
+                                onClick={() => onSelectBot(b.id)}
+                                className={`linear-nav-item w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition text-left group ${
                                   isSelected
-                                    ? 'bg-white/[0.1] text-white border border-white/[0.08]'
+                                    ? 'active bg-white/[0.09] text-white'
                                     : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                                 }`}
                               >
-                                <span className="text-sm">{b.avatar}</span>
+                                <BotAvatarBadge avatar={b.avatar} isSelected={isSelected} size="sm" />
                                 <div className="min-w-0 flex-1 truncate">
                                   <p className="text-xs font-medium truncate text-zinc-200">{b.name}</p>
                                 </div>
@@ -330,7 +318,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="pt-2">
                 <button
                   onClick={() => setShowHiddenBots(!showHiddenBots)}
-                  className="w-full flex items-center justify-between px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-300"
+                  className="w-full flex items-center justify-between px-2.5 py-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition"
                 >
                   <div className="flex items-center gap-1.5">
                     <EyeOff className="w-3 h-3" />
@@ -339,17 +327,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {showHiddenBots ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 </button>
                 {showHiddenBots && (
-                  <div className="space-y-1 mt-1">
+                  <div className="space-y-0.5 mt-1">
                     {hiddenBots.map((b) => (
                       <button
                         key={b.id}
-                        onClick={() => {
-                          onSelectBot(b.id);
-                          setCurrentTab('workspace');
-                        }}
-                        className="w-full flex items-center gap-2 px-2 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 text-left"
+                        onClick={() => onSelectBot(b.id)}
+                        className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 text-left transition"
                       >
-                        <span className="text-sm opacity-50">{b.avatar}</span>
+                        <BotAvatarBadge avatar={b.avatar} size="sm" />
                         <span className="text-xs truncate">{b.name}</span>
                       </button>
                     ))}
@@ -358,15 +343,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           </>
+        ) : (
+          /* Collapsed View: Just bot avatars */
+          <div className="space-y-2 py-1 flex flex-col items-center">
+            {bots.map((b) => {
+              const isSelected = activeBotId === b.id;
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => onSelectBot(b.id)}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm transition relative group ${
+                    isSelected 
+                      ? 'bg-white/15 text-white border border-white/20 shadow-xs' 
+                      : 'hover:bg-white/[0.06] text-zinc-400 hover:text-white border border-transparent'
+                  }`}
+                  title={`${b.name} (${b.role_tag})`}
+                >
+                  <span>{b.avatar}</span>
+                  {isSelected && (
+                    <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-white rounded-r-full" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* Spacer if collapsed */}
-      {isCollapsed && <div className="flex-1" />}
+      {/* The Four Cs Navigation Pill Stack */}
+      <div className="p-2 border-t border-white/[0.06] bg-[#050507] space-y-0.5">
+        <button
+          onClick={onOpenConnectionsModal}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title="Connections & Plugins (Gmail, Calendar, Slack)"
+        >
+          <Webhook className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+          {!isCollapsed && <span>Connections & Plugins</span>}
+        </button>
+
+        <button
+          onClick={onOpenRoutinesModal}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title="Routines & Cadence (Scheduled Cron & Webhooks)"
+        >
+          <CalendarClock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          {!isCollapsed && <span>Routines & Cadence</span>}
+        </button>
+
+        <button
+          onClick={onOpenMemoryModal}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title="Context & Memory (Global & Bot Directives)"
+        >
+          <BrainCircuit className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          {!isCollapsed && <span>Context & Memory</span>}
+        </button>
+
+        <button
+          onClick={onOpenSkillsModal}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title="Capabilities & Skills (Slash commands & Teach a Task)"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          {!isCollapsed && <span>Capabilities & Skills</span>}
+        </button>
+
+        <button
+          onClick={onOpenSettingsModal}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title="AI Providers, MCP & Sandbox Settings"
+        >
+          <Settings className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+          {!isCollapsed && <span>AI Models & Settings</span>}
+        </button>
+      </div>
 
       {/* Weekly Usage Meter */}
       {!isCollapsed && (
-        <div className="px-3 py-2.5 border-t border-white/[0.06] bg-black/40">
+        <div className="px-3 py-2 border-t border-white/[0.06] bg-black/40">
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
               <Zap className="w-3 h-3 text-cyan-400" />
@@ -376,10 +440,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {usagePercent}% used
             </span>
           </div>
-          <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+          <div className="w-full bg-zinc-800/80 h-1.5 rounded-full mt-1.5 overflow-hidden">
             <div 
-              className={`h-full rounded-full transition-all ${
-                usagePercent >= 90 ? 'bg-amber-400' : 'bg-cyan-400'
+              className={`h-full rounded-full transition-all duration-300 ${
+                usagePercent >= 90 ? 'bg-amber-400' : 'bg-gradient-to-r from-cyan-500 to-cyan-400'
               }`} 
               style={{ width: `${usagePercent}%` }}
             />
@@ -388,28 +452,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Bottom Settings & Status */}
-      <div className="p-2 border-t border-white/[0.06] bg-[#050507]">
-        <button
-          onClick={() => setCurrentTab('settings')}
-          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition ${
-            currentTab === 'settings' 
-              ? 'bg-white/[0.09] text-white' 
-              : 'text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200'
-          } ${isCollapsed ? 'justify-center' : ''}`}
-          title="AI Provider Accounts & MCP"
-        >
-          <Settings className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-          {!isCollapsed && <span>AI Providers & MCP</span>}
-        </button>
-
-        {!isCollapsed && (
-          <div className="flex items-center gap-2 px-2.5 pt-1.5 text-[10px] text-zinc-500 font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>Cloud VM: Always-On Active</span>
-          </div>
-        )}
-      </div>
+      {/* Cloud VM Status Pill */}
+      {!isCollapsed && (
+        <div className="px-3 py-2 border-t border-white/[0.06] bg-[#050507] flex items-center gap-2 text-[10px] text-zinc-400 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
+          <span>Cloud VM: Online · US-East Active</span>
+        </div>
+      )}
     </aside>
   );
 };

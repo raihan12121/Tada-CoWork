@@ -69,26 +69,28 @@ export const BotModal: React.FC<BotModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#0b0b10] border border-white/[0.1] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
+      <div className="bg-[#0c0c10] border border-white/[0.12] rounded-2xl w-full max-w-lg shadow-[0_32px_96px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-black/40">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{avatar}</span>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-b from-white/15 to-white/5 border border-white/10 flex items-center justify-center text-sm shadow-xs">
+              <span>{avatar}</span>
+            </div>
             <div>
-              <h3 className="text-sm font-bold text-white">
-                {bot ? `Edit ${bot.name}` : 'Create New Bot'}
+              <h3 className="text-xs font-semibold text-white tracking-tight">
+                {bot ? `Edit ${bot.name}` : 'Create New Specialist Bot'}
               </h3>
-              <p className="text-[11px] text-zinc-400">Configure persona, skills, and memory.</p>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Configure persona, skills, and memory.</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white p-1 rounded-lg">
+          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] transition">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 select-text">
           {/* Avatar & Name */}
           <div className="flex gap-3">
             <div>
@@ -96,7 +98,7 @@ export const BotModal: React.FC<BotModalProps> = ({
               <select
                 value={avatar}
                 onChange={(e) => setAvatar(e.target.value)}
-                className="bg-[#14141c] border border-white/[0.1] rounded-xl px-2 py-2 text-lg text-white focus:outline-none"
+                className="bg-[#14141a] border border-white/[0.1] rounded-xl px-2.5 py-2 text-base text-white focus:outline-none"
               >
                 {AVATAR_OPTIONS.map((av) => (
                   <option key={av} value={av}>{av}</option>
@@ -104,14 +106,14 @@ export const BotModal: React.FC<BotModalProps> = ({
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Bot Name</label>
+              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Specialist Name</label>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Klaus, Dev, Motion..."
-                className="w-full bg-[#14141c] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20"
+                className="w-full bg-[#14141a] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20"
               />
             </div>
           </div>
@@ -125,7 +127,7 @@ export const BotModal: React.FC<BotModalProps> = ({
                 value={roleTag}
                 onChange={(e) => setRoleTag(e.target.value)}
                 placeholder="e.g. Chief of Staff, Animator..."
-                className="w-full bg-[#14141c] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20"
+                className="w-full bg-[#14141a] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20"
               />
             </div>
             <div>
@@ -133,7 +135,7 @@ export const BotModal: React.FC<BotModalProps> = ({
               <select
                 value={folderName}
                 onChange={(e) => setFolderName(e.target.value)}
-                className="w-full bg-[#14141c] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                className="w-full bg-[#14141a] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
               >
                 {FOLDER_OPTIONS.map((f) => (
                   <option key={f} value={f}>{f}</option>
@@ -142,47 +144,46 @@ export const BotModal: React.FC<BotModalProps> = ({
             </div>
           </div>
 
-          {/* Pinned Checkbox */}
-          <div className="flex items-center gap-2 pt-1">
+          {/* Description */}
+          <div>
+            <label className="block text-[11px] text-zinc-400 font-medium mb-1">Description & Objective</label>
+            <textarea
+              rows={2}
+              required
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What does this bot specialize in? What workflows should it execute?"
+              className="w-full bg-[#14141a] border border-white/[0.1] rounded-xl p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20 leading-relaxed resize-none"
+            />
+          </div>
+
+          {/* Pin to top */}
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="pinnedBot"
               checked={pinned}
               onChange={(e) => setPinned(e.target.checked)}
-              className="rounded bg-[#14141c] border-white/20 text-cyan-400 focus:ring-0"
+              className="rounded bg-black border-zinc-700 text-cyan-500 focus:ring-0"
             />
             <label htmlFor="pinnedBot" className="text-xs text-zinc-300 font-medium cursor-pointer">
-              Pin to top of sidebar
+              Pin to top of sidebar for quick access
             </label>
           </div>
 
-          {/* System Instructions / Prompt */}
-          <div>
-            <label className="block text-[11px] text-zinc-400 font-medium mb-1">
-              Job Description & System Instructions
-            </label>
-            <textarea
-              required
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the bot's job, responsibilities, tone, and what tasks it should handle or delegate..."
-              className="w-full bg-[#14141c] border border-white/[0.1] rounded-xl p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/20 resize-none font-mono"
-            />
-          </div>
-
-          {/* Individual Memory */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5">
-                <Brain className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Individual Bot Memory</span>
+          {/* Memory Directives */}
+          <div className="pt-2 border-t border-white/[0.08]">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Brain className="w-3.5 h-3.5 text-purple-400" />
+              <label className="text-[11px] text-zinc-400 font-semibold uppercase tracking-wider">
+                Persona Directives & Rules ({memories.length})
               </label>
-              <span className="text-[10px] text-zinc-500">Private to this bot</span>
             </div>
+
             <div className="flex gap-2 mb-2">
               <input
                 type="text"
+                placeholder="e.g. Always generate typescript with strict null checks..."
                 value={memoryInput}
                 onChange={(e) => setMemoryInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -191,86 +192,85 @@ export const BotModal: React.FC<BotModalProps> = ({
                     handleAddMemory();
                   }
                 }}
-                placeholder="Add a permanent rule or fact..."
-                className="flex-1 bg-[#14141c] border border-white/[0.1] rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none"
+                className="flex-1 bg-[#14141a] border border-white/[0.1] rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={handleAddMemory}
-                className="bg-white/[0.1] hover:bg-white/[0.2] text-xs font-semibold px-3 py-1.5 rounded-xl text-white transition"
+                className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold text-white rounded-xl border border-white/[0.08] transition"
               >
-                Add
+                Add Rule
               </button>
             </div>
-            <div className="space-y-1 max-h-24 overflow-y-auto">
-              {memories.map((m, i) => (
-                <div key={i} className="flex items-center justify-between bg-white/[0.03] border border-white/[0.06] px-2.5 py-1.5 rounded-lg text-xs text-zinc-300">
-                  <span className="truncate flex-1">{m}</span>
-                  <button type="button" onClick={() => handleRemoveMemory(i)} className="text-zinc-500 hover:text-rose-400 ml-2">
-                    <X className="w-3 h-3" />
+
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {memories.map((mem, i) => (
+                <div key={i} className="flex items-center justify-between bg-black/40 border border-white/[0.06] px-2.5 py-1.5 rounded-lg text-xs text-zinc-300">
+                  <span className="truncate">{mem}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMemory(i)}
+                    className="text-zinc-500 hover:text-rose-400 ml-2"
+                  >
+                    ✕
                   </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Quick Actions for existing bot */}
-          {bot && (
-            <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between">
-              <div className="flex gap-2">
-                {onDuplicate && (
-                  <button
-                    type="button"
-                    onClick={() => onDuplicate(bot.id)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-xs text-zinc-300 transition"
-                    title="Duplicate bot configuration"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>Duplicate</span>
-                  </button>
-                )}
-                {onExportTemplate && (
-                  <button
-                    type="button"
-                    onClick={() => onExportTemplate(bot.id)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-xs text-zinc-300 transition"
-                    title="Share as template"
-                  >
-                    <Share2 className="w-3 h-3" />
-                    <span>Template</span>
-                  </button>
-                )}
-              </div>
-              {onDelete && (
+          {/* Footer Actions */}
+          <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              {bot && onDuplicate && (
+                <button
+                  type="button"
+                  onClick={() => onDuplicate(bot.id)}
+                  className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/[0.06] transition"
+                  title="Duplicate Bot"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {bot && onExportTemplate && (
+                <button
+                  type="button"
+                  onClick={() => onExportTemplate(bot.id)}
+                  className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/[0.06] transition"
+                  title="Export Template JSON"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {bot && onDelete && (
                 <button
                   type="button"
                   onClick={() => onDelete(bot.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs transition"
+                  className="p-2 text-zinc-400 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition"
+                  title="Delete Bot"
                 >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Delete</span>
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
-          )}
 
-          {/* Submit */}
-          <div className="pt-3 border-t border-white/[0.08] flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white rounded-xl hover:bg-white/[0.06] transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex items-center gap-1.5 bg-white text-black hover:bg-zinc-200 px-4 py-2 text-xs font-bold rounded-xl transition shadow-md disabled:opacity-50"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Saving...' : 'Save Bot'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 text-xs text-zinc-400 hover:text-white rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="btn-primary text-xs"
+              >
+                <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{isSaving ? 'Saving...' : 'Save Specialist'}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

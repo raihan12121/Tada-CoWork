@@ -5,10 +5,10 @@ import subprocess
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DIST_DIR = BASE_DIR / "dist_pc" / "Coagent"
+DIST_DIR = BASE_DIR / "dist_pc" / "AnyWork"
 INSTALLER_DIR = BASE_DIR / "installer"
 OUTPUT_DIR = BASE_DIR / "dist_installer"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.1.0"
 
 INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -21,7 +21,7 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
     # Build hierarchical directory tree
     root_node = {
         "id": "INSTALLFOLDER",
-        "name": "Coagent",
+        "name": "AnyWork",
         "children": {},
         "rel_path": Path(".")
     }
@@ -92,20 +92,20 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
     icon_abs = str((BASE_DIR / "desktop" / "icon.ico").resolve())
 
     # Shortcuts components
-    desktop_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "coagent.desktop.shortcut"))
-    menu_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "coagent.menu.shortcut"))
+    desktop_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "anywork.desktop.shortcut"))
+    menu_guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "anywork.menu.shortcut"))
 
     comp_refs.append("cmp_desktop_shortcut")
     comp_refs.append("cmp_menu_shortcut")
 
     shortcut_components = [
         f'    <Component Id="cmp_desktop_shortcut" Directory="DesktopFolder" Guid="{desktop_guid}">\n'
-        f'      <Shortcut Id="DesktopShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Application" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
-        f'      <RegistryValue Root="HKCU" Key="Software\\Coagent" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
+        f'      <Shortcut Id="DesktopShortcut" Name="AnyWork" Description="AnyWork Autonomous Workforce Desktop Application" Target="[INSTALLFOLDER]AnyWork.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
+        f'      <RegistryValue Root="HKCU" Key="Software\\AnyWork" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
         f'    </Component>',
         f'    <Component Id="cmp_menu_shortcut" Directory="ProgramMenuFolder" Guid="{menu_guid}">\n'
-        f'      <Shortcut Id="StartMenuShortcut" Name="Coagent" Description="Coagent Autonomous Desktop Application" Target="[INSTALLFOLDER]Coagent.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
-        f'      <RegistryValue Root="HKCU" Key="Software\\Coagent" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
+        f'      <Shortcut Id="StartMenuShortcut" Name="AnyWork" Description="AnyWork Autonomous Workforce Desktop Application" Target="[INSTALLFOLDER]AnyWork.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" />\n'
+        f'      <RegistryValue Root="HKCU" Key="Software\\AnyWork" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />\n'
         f'    </Component>'
     ]
 
@@ -114,8 +114,8 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"',
         '     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">',
-        '  <Package Name="Coagent"',
-        '           Manufacturer="Coagent"',
+        '  <Package Name="AnyWork"',
+        '           Manufacturer="AnyWork"',
         f'           Version="{APP_VERSION}"',
         '           UpgradeCode="4A1B2C3D-E5F6-7890-ABCD-EF1234567890"',
         '           Scope="perMachine">',
@@ -125,7 +125,7 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
         '    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />',
         '',
         '    <StandardDirectory Id="ProgramFiles64Folder">',
-        '      <Directory Id="INSTALLFOLDER" Name="Coagent">',
+        '      <Directory Id="INSTALLFOLDER" Name="AnyWork">',
     ]
 
     wxs_lines.extend(dir_xml_lines)
@@ -144,16 +144,16 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
     wxs_lines.extend(shortcut_components)
     wxs_lines.append('')
     wxs_lines.extend([
-        '    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Coagent" />',
+        '    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch AnyWork" />',
         '    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />',
-        '    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="[INSTALLFOLDER]Coagent.exe" Return="asyncNoWait" />',
+        '    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="[INSTALLFOLDER]AnyWork.exe" Return="asyncNoWait" />',
         '    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />',
         '    <UI>',
         '      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />',
         '    </UI>',
         ''
     ])
-    wxs_lines.append('    <Feature Id="MainFeature" Title="Coagent Desktop Application" Level="1">')
+    wxs_lines.append('    <Feature Id="MainFeature" Title="AnyWork Desktop Application" Level="1">')
 
     for cr in comp_refs:
         wxs_lines.append(f'      <ComponentRef Id="{cr}" />')
@@ -169,8 +169,8 @@ def generate_wix_xml(dist_dir: Path, output_file: Path):
 
 
 def build_msi():
-    wxs_file = INSTALLER_DIR / "coagent.wxs"
-    msi_file = OUTPUT_DIR / f"Coagent-{APP_VERSION}-x64.msi"
+    wxs_file = INSTALLER_DIR / "anywork.wxs"
+    msi_file = OUTPUT_DIR / f"AnyWork-{APP_VERSION}-x64.msi"
 
     generate_wix_xml(DIST_DIR, wxs_file)
 

@@ -76,3 +76,43 @@ async def test_session_lifecycle_actions_on_nonexistent_session():
         # Start nonexistent
         s_resp = await client.post(f"/v1/sessions/{ghost_id}/start")
         assert s_resp.status_code == 404
+
+@pytest.mark.asyncio
+async def test_terminal_command_execution():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create session
+        created = await client.post("/v1/sessions", json={"task": "Run terminal test"})
+        assert created.status_code == 200
+        sid = created.json()["id"]
+
+        # Run echo command
+        term_resp = await client.post(
+            f"/v1/sessions/{sid}/terminal",
+            json={"command": "echo Hello AnyWork"}
+        )
+        assert term_resp.status_code == 200
+        data = term_resp.json()
+        assert data["success"] is True
+        assert "Hello AnyWork" in data["stdout"]
+        assert data["exit_code"] == 0
+
+@pytest.mark.asyncio
+async def test_list_sessions_bot_filtering():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create session for bot A
+        bot_a_resp = await client.post("/v1/sessions", json={"task": "Task for Bot A", "bot_id": "test_bot_alpha"})
+        assert bot_a_resp.status_code == 200
+        
+        # Create session for bot B
+        bot_b_resp = await client.post("/v1/sessions", json={"task": "Task for Bot B", "bot_id": "test_bot_beta"})
+        assert bot_b_resp.status_code == 200
+
+        # Filter by bot A
+        res_a = await client.get("/v1/sessions?bot_id=test_bot_alpha")
+        assert res_a.status_code == 200
+        items_a = res_a.json()
+        assert len(items_a) >= 1
+        assert all(s["bot_id"] == "test_bot_alpha" for s in items_a)
+

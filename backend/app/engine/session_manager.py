@@ -481,9 +481,19 @@ class SessionManager:
                 ,max_runtime_seconds=db_sess.max_runtime_seconds or 300
             )
 
-    async def list_sessions(self, limit: int = 20) -> List[SessionModel]:
+    async def list_sessions(
+        self,
+        limit: int = 20,
+        bot_id: Optional[str] = None,
+        channel_id: Optional[str] = None
+    ) -> List[SessionModel]:
         async with AsyncSessionLocal() as db:
-            stmt = select(DBSession).order_by(DBSession.created_at.desc()).limit(limit)
+            stmt = select(DBSession)
+            if bot_id:
+                stmt = stmt.where(DBSession.bot_id == bot_id)
+            if channel_id:
+                stmt = stmt.where(DBSession.channel_id == channel_id)
+            stmt = stmt.order_by(DBSession.created_at.desc()).limit(limit)
             res = await db.execute(stmt)
             sessions = res.scalars().all()
             if not sessions:

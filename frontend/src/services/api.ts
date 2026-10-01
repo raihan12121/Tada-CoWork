@@ -46,11 +46,18 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promi
 
 export const api = {
   // Sessions
-  async createSession(task: string, workspaceId = 'default', providerAccountId?: string, allowProviderFailover = false): Promise<Session> {
+  async createSession(task: string, workspaceId = 'default', providerAccountId?: string, allowProviderFailover = false, botId?: string, channelId?: string): Promise<Session> {
     const res = await apiFetch(`${API_BASE}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, workspace_id: workspaceId, provider_account_id: providerAccountId || null, allow_provider_failover: allowProviderFailover })
+      body: JSON.stringify({ 
+        task, 
+        workspace_id: workspaceId, 
+        provider_account_id: providerAccountId || null, 
+        allow_provider_failover: allowProviderFailover,
+        bot_id: botId || null,
+        channel_id: channelId || null
+      })
     });
     if (!res.ok) throw new Error('Failed to create session');
     return res.json();
@@ -182,9 +189,31 @@ export const api = {
     return res.json();
   },
 
-  async listSessions(): Promise<Session[]> {
-    const res = await apiFetch(`${API_BASE}/sessions`);
+  async listSessions(botId?: string, channelId?: string, limit = 50): Promise<Session[]> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (botId) params.set('bot_id', botId);
+    if (channelId) params.set('channel_id', channelId);
+    const qs = params.toString();
+    const res = await apiFetch(`${API_BASE}/sessions${qs ? `?${qs}` : ''}`);
     if (!res.ok) throw new Error('Failed to list sessions');
+    return res.json();
+  },
+
+  async executeTerminalCommand(sessionId: string, command: string, timeoutSeconds = 30): Promise<{
+    success: boolean;
+    stdout: string;
+    stderr: string;
+    exit_code: number;
+    execution_time_ms: number;
+    cwd: string;
+  }> {
+    const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/terminal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, timeout_seconds: timeoutSeconds })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to execute terminal command');
     return res.json();
   },
 
@@ -558,5 +587,68 @@ export const api = {
   async deleteChannel(channelId: string): Promise<void> {
     const res = await apiFetch(`${API_BASE}/channels/${channelId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete channel');
+  },
+
+  async getBotRoutines(botId: string): Promise<any[]> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}/routines`);
+    if (!res.ok) throw new Error('Failed to fetch bot routines');
+    return res.json();
+  },
+
+  async triggerBotWebhook(botId: string, payload: Record<string, any>): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/bots/${botId}/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to trigger webhook');
+    return res.json();
+  },
+
+  // Connectors Vault
+  async listConnectors(): Promise<Array<{
+    id: string;
+    name: string;
+    category: string;
+    description: string;
+    connected: boolean;
+    permissions: string[];
+    allowed_bots: string[];
+    granted_at?: string;
+    last_used_at?: string;
+  }>> {
+    const res = await apiFetch(`${API_BASE}/connectors`);
+    if (!res.ok) throw new Error('Failed to list connectors');
+    return res.json();
+  },
+
+  async configureConnector(id: string, payload: {
+    connected: boolean;
+    permissions?: string[];
+    allowed_bots?: string[];
+    config?: Record<string, any>;
+  }): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/connectors/${encodeURIComponent(id)}/configure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to configure connector');
+    return res.json();
+  },
+
+  async disconnectConnector(id: string): Promise<void> {
+    const res = await apiFetch(`${API_BASE}/connectors/${encodeURIComponent(id)}/disconnect`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Failed to disconnect connector');
+  },
+
+  async testConnector(id: string): Promise<{ status: string; connector: string; latency_ms: number; permissions_verified: boolean }> {
+    const res = await apiFetch(`${API_BASE}/connectors/${encodeURIComponent(id)}/test`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Failed to test connector');
+    return res.json();
   }
 };

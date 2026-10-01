@@ -118,12 +118,14 @@ class SandboxSession:
             with open(script_path, "w", encoding="utf-8") as f:
                 f.write(code)
             if getattr(sys, "frozen", False):
-                worker = Path(sys.executable).with_name("CoagentSandboxWorker.exe")
+                worker = Path(sys.executable).with_name("AnyWorkSandboxWorker.exe")
+                if not worker.exists():
+                    worker = Path(sys.executable).with_name("CoagentSandboxWorker.exe")
                 if not worker.exists():
                     return {
                         "success": False,
                         "stdout": "",
-                        "stderr": "Packaged sandbox worker is missing. Reinstall the current Coagent build.",
+                        "stderr": "Packaged sandbox worker is missing. Reinstall the current AnyWork build.",
                         "execution_time_ms": int((time.time() - start_time) * 1000),
                         "exit_code": -1,
                     }
@@ -225,6 +227,85 @@ class SandboxSession:
                 "stderr": f"Subprocess launch failed: {str(e)}",
                 "execution_time_ms": int((time.time() - start_time) * 1000),
                 "exit_code": -1
+            }
+
+    async def execute_command(
+        self,
+        command: str,
+        timeout_seconds: int = 30
+    ) -> Dict[str, Any]:
+        """
+        Executes an arbitrary shell or CLI command inside the sandbox root directory.
+        Captures stdout and stderr securely with bounded execution time and buffer caps.
+        """
+        start_time = time.time()
+        timeout_seconds = max(1, min(int(timeout_seconds), 120))
+
+        env = {
+            "PYTHONUNBUFFERED": "1",
+            "SANDBOX_ROOT": str(self.sandbox_dir),
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(self.sandbox_dir),
+            "TEMP": str(self.sandbox_dir),
+            "TMP": str(self.sandbox_dir),
+        }
+
+        if sys.platform == "win32":
+            cmd_args = ["cmd.exe", "/c", command]
+        else:
+            cmd_args = ["/bin/sh", "-c", command]
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd_args,
+                cwd=str(self.sandbox_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=timeout_seconds
+                )
+                exit_code = process.returncode if process.returncode is not None else 0
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                    await process.wait()
+                except Exception:
+                    pass
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": f"Command timed out after {timeout_seconds}s limit.",
+                    "execution_time_ms": int((time.time() - start_time) * 1000),
+                    "exit_code": -1,
+                    "cwd": str(self.sandbox_dir),
+                }
+
+            max_bytes = settings.DEFAULT_MAX_OUTPUT_BYTES
+            stdout = stdout_bytes[:max_bytes].decode("utf-8", errors="replace")
+            stderr = stderr_bytes[:max_bytes].decode("utf-8", errors="replace")
+            if len(stdout_bytes) > max_bytes:
+                stdout += "\n...[Output truncated to 1MB limit]..."
+
+            return {
+                "success": exit_code == 0,
+                "stdout": stdout,
+                "stderr": stderr,
+                "execution_time_ms": int((time.time() - start_time) * 1000),
+                "exit_code": exit_code,
+                "cwd": str(self.sandbox_dir),
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": f"Command execution error: {str(e)}",
+                "execution_time_ms": int((time.time() - start_time) * 1000),
+                "exit_code": -1,
+                "cwd": str(self.sandbox_dir),
             }
 
     def destroy(self):

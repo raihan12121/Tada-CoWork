@@ -70,3 +70,38 @@ async def test_bots_and_channels_crud():
         assert new_ch_resp.status_code == 200
         new_ch = new_ch_resp.json()
         assert new_ch["name"] == "growth-squad"
+
+@pytest.mark.asyncio
+async def test_connectors_vault_crud():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # 1. List connectors
+        resp = await client.get("/v1/connectors")
+        assert resp.status_code == 200
+        connectors = resp.json()
+        assert len(connectors) >= 6
+        ids = [c["id"] for c in connectors]
+        assert "gmail" in ids
+        assert "github" in ids
+
+        # 2. Configure connector
+        conf_resp = await client.post("/v1/connectors/github/configure", json={
+            "connected": True,
+            "permissions": ["repo:status", "pull_requests:write"],
+            "allowed_bots": ["all"],
+            "config": {"apiKey": "ghp_mock_token_for_test"}
+        })
+        assert conf_resp.status_code == 200
+        conf_data = conf_resp.json()
+        assert conf_data["connected"] is True
+        assert "repo:status" in conf_data["permissions"]
+
+        # 3. Test connector handshake
+        test_resp = await client.post("/v1/connectors/github/test")
+        assert test_resp.status_code == 200
+        assert test_resp.json()["status"] == "connected"
+
+        # 4. Disconnect connector
+        disc_resp = await client.post("/v1/connectors/github/disconnect")
+        assert disc_resp.status_code == 200
+        assert disc_resp.json()["status"] == "disconnected"
+

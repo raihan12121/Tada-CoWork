@@ -5,17 +5,15 @@ import { AnyWorkChat } from './components/AnyWorkChat';
 import { AgentComputerPanel } from './components/AgentComputerPanel';
 import { BotModal } from './components/BotModal';
 import { ChannelModal } from './components/ChannelModal';
-import { MemoryManager } from './components/MemoryManager';
-import { ScheduleManager } from './components/ScheduleManager';
-import { BridgeManager } from './components/BridgeManager';
-import { AuditViewer } from './components/AuditViewer';
-import { ProviderSettings } from './components/ProviderSettings';
-import { SkillsManager } from './components/SkillsManager';
+import { ConnectionsModal } from './components/ConnectionsModal';
+import { RoutinesModal } from './components/RoutinesModal';
+import { MemoryModal } from './components/MemoryModal';
+import { SkillsModal } from './components/SkillsModal';
+import { SettingsModal } from './components/SettingsModal';
 import type { Session, ActivityEvent, Bot, Channel, BotCreate, BotUpdate, ChannelCreate } from './types';
 import { api, getBackendBaseUrl } from './services/api';
 
 export const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState('workspace');
   const [bots, setBots] = useState<Bot[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
@@ -25,10 +23,17 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [isComputerOpen, setIsComputerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Modals state
   const [botModalOpen, setBotModalOpen] = useState(false);
   const [editingBot, setEditingBot] = useState<Bot | null>(null);
   const [channelModalOpen, setChannelModalOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [connectionsModalOpen, setConnectionsModalOpen] = useState(false);
+  const [routinesModalOpen, setRoutinesModalOpen] = useState(false);
+  const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  const [skillsModalOpen, setSkillsModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<any>(null);
@@ -57,13 +62,34 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadBotsAndChannels();
-    api.listSessions().then((data) => {
-      setSessions(data);
-      if (data.length > 0 && !activeSession) {
-        setActiveSession(data[0]);
-      }
-    }).catch(console.error);
   }, []);
+
+  // Isolate sessions per selected bot or channel
+  useEffect(() => {
+    if (!activeBotId && !activeChannelId) return;
+    let isCancelled = false;
+
+    api.listSessions(activeBotId || undefined, activeChannelId || undefined)
+      .then(async (data) => {
+        if (isCancelled) return;
+        setSessions(data);
+        if (data.length > 0) {
+          setActiveSession(data[0]);
+          try {
+            const evts = await api.getSessionEvents(data[0].id);
+            if (!isCancelled) setEvents(evts);
+          } catch {}
+        } else {
+          setActiveSession(null);
+          setEvents([]);
+        }
+      })
+      .catch(console.error);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeBotId, activeChannelId]);
 
   const activeBot = bots.find((b) => b.id === activeBotId) || null;
   const activeChannel = channels.find((c) => c.id === activeChannelId) || null;
@@ -104,7 +130,7 @@ export const App: React.FC = () => {
             if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
             refreshTimerRef.current = setTimeout(() => {
               api.getSession(activeSessionId).then(setActiveSession).catch(console.error);
-              api.listSessions().then(setSessions).catch(console.error);
+              api.listSessions(activeBotId || undefined, activeChannelId || undefined).then(setSessions).catch(console.error);
             }, 200);
           }
         } catch (e) {
@@ -121,7 +147,7 @@ export const App: React.FC = () => {
   }, [activeSessionId]);
 
   // Sending message in AnyWork chat
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string, files?: File[]) => {
     setIsLoading(true);
     try {
       // Create session tagged with active bot or channel
@@ -129,8 +155,22 @@ export const App: React.FC = () => {
         text,
         'default',
         undefined,
-        false
+        false,
+        activeBotId || undefined,
+        activeChannelId || undefined
       );
+
+      // Upload attached files to session input sandbox
+      if (files && files.length > 0) {
+        for (const f of files) {
+          try {
+            await api.uploadSessionInput(newSession.id, f);
+          } catch (e) {
+            console.error('Failed to upload file input:', e);
+          }
+        }
+      }
+
       setSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
       setEvents([]);
@@ -235,31 +275,37 @@ export const App: React.FC = () => {
     api.listSessions().then(setSessions);
   };
 
+  const handleSessionTriggered = async (sessionId: string) => {
+    try {
+      const s = await api.getSession(sessionId);
+      setActiveSession(s);
+      setEvents(await api.getSessionEvents(sessionId));
+      setSessions((prev) => [s, ...prev.filter(x => x.id !== sessionId)]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
-    <div className="anywork-shell flex h-screen bg-black text-zinc-100 font-sans antialiased overflow-hidden select-none">
-      {/* Sidebar */}
+    <div className="anywork-shell flex h-screen bg-[#050507] text-[#fbfbfb] font-sans antialiased overflow-hidden select-none">
+      {/* Grokbot Sidebar */}
       <Sidebar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
         sessions={sessions}
         activeSessionId={activeSession?.id || null}
         onSelectSession={async (id) => {
           const s = await api.getSession(id);
           setActiveSession(s);
           setEvents(await api.getSessionEvents(id));
-          setCurrentTab('workspace');
         }}
         onNewSession={() => {
           setActiveSession(null);
           setEvents([]);
-          setCurrentTab('workspace');
         }}
         bots={bots}
         activeBotId={activeBotId}
         onSelectBot={(id) => {
           setActiveBotId(id);
           setActiveChannelId(null);
-          setCurrentTab('workspace');
         }}
         onOpenNewBotModal={() => {
           setEditingBot(null);
@@ -270,87 +316,54 @@ export const App: React.FC = () => {
         onSelectChannel={(id) => {
           setActiveChannelId(id);
           setActiveBotId(null);
-          setCurrentTab('workspace');
         }}
         onOpenNewChannelModal={() => setChannelModalOpen(true)}
+        onOpenConnectionsModal={() => setConnectionsModalOpen(true)}
+        onOpenRoutinesModal={() => setRoutinesModalOpen(true)}
+        onOpenMemoryModal={() => setMemoryModalOpen(true)}
+        onOpenSkillsModal={() => setSkillsModalOpen(true)}
+        onOpenSettingsModal={() => setSettingsModalOpen(true)}
       />
 
-      {/* Main Content Area */}
+      {/* Main Grokbot Workspace: Stream Chat + Agent Computer Panel */}
       <main className="flex-1 flex overflow-hidden bg-[#09090c]">
-        {currentTab === 'skills' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <SkillsManager onSessionCreated={async (id) => {
-              setActiveSession(await api.getSession(id));
-              setCurrentTab('workspace');
-            }} />
-          </div>
-        )}
-        {currentTab === 'memory' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <MemoryManager />
-          </div>
-        )}
-        {currentTab === 'schedules' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <ScheduleManager onSessionCreated={async (id) => {
-              setActiveSession(await api.getSession(id));
-              setCurrentTab('workspace');
-            }} />
-          </div>
-        )}
-        {currentTab === 'bridge' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <BridgeManager activeSessionId={activeSession?.id} />
-          </div>
-        )}
-        {currentTab === 'audit' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <AuditViewer />
-          </div>
-        )}
-        {currentTab === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <ProviderSettings />
-          </div>
-        )}
+        <div className="flex-1 flex h-full overflow-hidden">
+          <AnyWorkChat
+            activeBot={activeBot}
+            activeChannel={activeChannel}
+            activeSession={activeSession}
+            events={events}
+            artifacts={activeSession?.artifacts || []}
+            pendingApproval={activeSession?.pending_approval}
+            onSendMessage={handleSendMessage}
+            onToggleComputer={() => setIsComputerOpen(!isComputerOpen)}
+            isComputerOpen={isComputerOpen}
+            onOpenBotSettings={() => {
+              setEditingBot(activeBot);
+              setBotModalOpen(true);
+            }}
+            onExportTemplate={handleExportTemplate}
+            onResolveApproval={handleResolveApproval}
+            isLoading={isLoading}
+            bots={bots}
+            onOpenRoutinesModal={() => setRoutinesModalOpen(true)}
+            onOpenMemoryModal={() => setMemoryModalOpen(true)}
+            onOpenSkillsModal={() => setSkillsModalOpen(true)}
+          />
 
-        {/* Workspace Central View (AnyWork Chat + Split-pane Agent Computer) */}
-        {currentTab === 'workspace' && (
-          <div className="flex-1 flex h-full overflow-hidden">
-            <AnyWorkChat
-              activeBot={activeBot}
-              activeChannel={activeChannel}
-              activeSession={activeSession}
-              events={events}
-              artifacts={activeSession?.artifacts || []}
-              pendingApproval={activeSession?.pending_approval}
-              onSendMessage={handleSendMessage}
-              onToggleComputer={() => setIsComputerOpen(!isComputerOpen)}
-              isComputerOpen={isComputerOpen}
-              onOpenBotSettings={() => {
-                setEditingBot(activeBot);
-                setBotModalOpen(true);
-              }}
-              onExportTemplate={handleExportTemplate}
-              onResolveApproval={handleResolveApproval}
-              isLoading={isLoading}
-              bots={bots}
-            />
-
-            {/* Split-pane Agent Computer */}
-            <AgentComputerPanel
-              isOpen={isComputerOpen}
-              onClose={() => setIsComputerOpen(false)}
-              botName={activeBot ? activeBot.name : 'assistant'}
-              artifacts={activeSession?.artifacts || []}
-              activeSessionId={activeSession?.id}
-              onTakeover={() => showToast('Human Takeover active. Control browser credentials.')}
-            />
-          </div>
-        )}
+          {/* Split-pane Agent Computer */}
+          <AgentComputerPanel
+            isOpen={isComputerOpen}
+            onClose={() => setIsComputerOpen(false)}
+            botName={activeBot ? activeBot.name : 'assistant'}
+            artifacts={activeSession?.artifacts || []}
+            activeSessionId={activeSession?.id}
+            onTakeover={() => showToast('Human Takeover active. Control browser credentials.')}
+          />
+        </div>
       </main>
 
-      {/* Bot Modal */}
+      {/* Bot Persona & Model Modal */}
       <BotModal
         isOpen={botModalOpen}
         onClose={() => {
@@ -370,7 +383,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Channel Modal */}
+      {/* Channel Creation Modal */}
       <ChannelModal
         isOpen={channelModalOpen}
         onClose={() => setChannelModalOpen(false)}
@@ -378,13 +391,53 @@ export const App: React.FC = () => {
         onCreateChannel={handleCreateChannel}
       />
 
+      {/* The Four Cs Grokbot Modals */}
+      <ConnectionsModal
+        isOpen={connectionsModalOpen}
+        onClose={() => setConnectionsModalOpen(false)}
+        bots={bots}
+      />
+
+      <RoutinesModal
+        isOpen={routinesModalOpen}
+        onClose={() => setRoutinesModalOpen(false)}
+        bots={bots}
+        initialBotId={activeBotId}
+        onSessionTriggered={handleSessionTriggered}
+      />
+
+      <MemoryModal
+        isOpen={memoryModalOpen}
+        onClose={() => setMemoryModalOpen(false)}
+        bots={bots}
+        initialBotId={activeBotId}
+        onBotUpdated={(updated) => {
+          setBots((prev) => prev.map(b => b.id === updated.id ? updated : b));
+        }}
+      />
+
+      <SkillsModal
+        isOpen={skillsModalOpen}
+        onClose={() => setSkillsModalOpen(false)}
+        onTriggerSkill={(cmd) => {
+          handleSendMessage(`/${cmd}`);
+        }}
+      />
+
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+      />
+
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#121216] border border-cyan-500/40 text-cyan-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fadeIn">
-          <AlertCircle className="w-5 h-5 text-cyan-400 shrink-0" />
-          <span className="text-xs font-medium">{toastMessage}</span>
-          <button onClick={() => setToastMessage(null)} className="text-zinc-400 hover:text-white ml-2 transition">
-            <X className="w-4 h-4" />
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#14141a]/95 border border-white/[0.12] text-zinc-100 px-4 py-2.5 rounded-xl shadow-[0_16px_48px_rgba(0,0,0,0.9)] backdrop-blur-xl animate-springEnter">
+          <div className="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center text-cyan-400 shrink-0">
+            <AlertCircle className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-xs font-medium text-zinc-200">{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="text-zinc-500 hover:text-white ml-2 transition">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

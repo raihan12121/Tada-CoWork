@@ -73,6 +73,7 @@ hiddenimports = [
     "app.api.swarm",
     "app.api.bots",
     "app.api.channels",
+    "app.api.connectors",
     "app.mcp.mcp_manager",
     "app.skills.skill_manager",
     "app.tools.swarm_delegate"
@@ -101,7 +102,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Coagent",
+    name="AnyWork",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -136,7 +137,7 @@ worker_exe = EXE(
     worker_analysis.scripts,
     [],
     exclude_binaries=True,
-    name="CoagentSandboxWorker",
+    name="AnyWorkSandboxWorker",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -155,5 +156,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Coagent",
+    name="AnyWork",
 )

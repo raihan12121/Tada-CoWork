@@ -331,3 +331,17 @@ class ChannelCreate(BaseModel):
     workspace_id: str = "default"
 
 
+class TerminalCommandRequest(BaseModel):
+    command: str = Field(..., min_length=1)
+    timeout_seconds: int = 30
+
+
+class TerminalCommandResponse(BaseModel):
+    success: bool
+    stdout: str
+    stderr: str
+    exit_code: int
+    execution_time_ms: int
+    cwd: str
+
+

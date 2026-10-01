@@ -2,7 +2,10 @@ import asyncio
 from typing import List, Optional
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File
-from app.models.schemas import SessionModel, SessionCreate, PlanModel, StepBase, PlanEditRequest, ActivityFeedEvent, SessionPermissionUpdate
+from app.models.schemas import (
+    SessionModel, SessionCreate, PlanModel, StepBase, PlanEditRequest,
+    ActivityFeedEvent, SessionPermissionUpdate, TerminalCommandRequest, TerminalCommandResponse
+)
 from app.engine.session_manager import session_manager
 from app.engine.planner import planner_engine
 from app.core.identity import Principal, require_workspace_access, parse_identity_token, anonymous_principal, identity_verification_configured
@@ -36,9 +39,14 @@ async def create_session(request: Request, payload: SessionCreate):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.get("", response_model=List[SessionModel])
-async def list_sessions(request: Request, limit: int = Query(20, ge=1, le=100)):
+async def list_sessions(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100),
+    bot_id: Optional[str] = Query(None),
+    channel_id: Optional[str] = Query(None),
+):
     principal = _principal(request)
-    sessions = await session_manager.list_sessions(limit)
+    sessions = await session_manager.list_sessions(limit, bot_id=bot_id, channel_id=channel_id)
     return [session for session in sessions if principal.can_access_workspace(session.workspace_id)]
 
 @router.get("/plan-tier/status")
@@ -176,7 +184,30 @@ async def cancel_session(request: Request, session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
     await session_manager.cancel_session(session_id)
-    return {"status": "cancelled", "session_id": session_id}
+@router.post("/{session_id}/terminal", response_model=TerminalCommandResponse)
+async def execute_terminal_command(
+    request: Request,
+    session_id: str,
+    payload: TerminalCommandRequest
+):
+    session = await session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _assert_session_access(request, session)
+    
+    sandbox = sandbox_manager.get_or_create(session_id, session.workspace_id)
+    result = await sandbox.execute_command(
+        command=payload.command,
+        timeout_seconds=payload.timeout_seconds
+    )
+    return TerminalCommandResponse(
+        success=result["success"],
+        stdout=result.get("stdout", ""),
+        stderr=result.get("stderr", ""),
+        exit_code=result.get("exit_code", 0),
+        execution_time_ms=result.get("execution_time_ms", 0),
+        cwd=result.get("cwd", "")
+    )
 
 @router.websocket("/{session_id}/stream")
 async def websocket_stream(websocket: WebSocket, session_id: str):
