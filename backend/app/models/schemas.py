@@ -277,38 +277,38 @@ class BotModel(BaseModel):
 
 
 class BotCreate(BaseModel):
-    name: str = Field(..., min_length=1)
-    avatar: str = "🤖"
-    role_tag: str = "Assistant"
-    description: str
-    folder_name: str = "General"
+    name: str = Field(..., min_length=1, max_length=100)
+    avatar: str = Field(default="🤖", max_length=50)
+    role_tag: str = Field(default="Assistant", max_length=100)
+    description: str = Field(..., max_length=5000)
+    folder_name: str = Field(default="General", max_length=100)
     pinned: bool = False
     is_hidden: bool = False
-    model: Optional[str] = None
-    workspace_id: str = "default"
+    model: Optional[str] = Field(default=None, max_length=100)
+    workspace_id: str = Field(default="default", max_length=100)
     enabled_tools: List[str] = Field(default_factory=list)
     individual_memory: List[str] = Field(default_factory=list)
 
 
 class BotUpdate(BaseModel):
-    name: Optional[str] = None
-    avatar: Optional[str] = None
-    role_tag: Optional[str] = None
-    description: Optional[str] = None
-    folder_name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    avatar: Optional[str] = Field(default=None, max_length=50)
+    role_tag: Optional[str] = Field(default=None, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=5000)
+    folder_name: Optional[str] = Field(default=None, max_length=100)
     pinned: Optional[bool] = None
     is_hidden: Optional[bool] = None
-    model: Optional[str] = None
+    model: Optional[str] = Field(default=None, max_length=100)
     enabled_tools: Optional[List[str]] = None
     individual_memory: Optional[List[str]] = None
 
 
 class BotTemplate(BaseModel):
-    name: str
-    avatar: str = "🤖"
-    role_tag: str
-    description: str
-    folder_name: str = "General"
+    name: str = Field(..., max_length=100)
+    avatar: str = Field(default="🤖", max_length=50)
+    role_tag: str = Field(..., max_length=100)
+    description: str = Field(..., max_length=5000)
+    folder_name: str = Field(default="General", max_length=100)
     enabled_tools: List[str] = Field(default_factory=list)
     individual_memory: List[str] = Field(default_factory=list)
     template_version: str = "1.0.0"
@@ -325,10 +325,10 @@ class ChannelModel(BaseModel):
 
 
 class ChannelCreate(BaseModel):
-    name: str = Field(..., min_length=1)
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=5000)
     bot_ids: List[str] = Field(default_factory=list)
-    workspace_id: str = "default"
+    workspace_id: str = Field(default="default", max_length=100)
 
 
 class TerminalCommandRequest(BaseModel):

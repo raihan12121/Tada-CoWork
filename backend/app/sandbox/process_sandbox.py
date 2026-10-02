@@ -229,6 +229,20 @@ class SandboxSession:
                 "exit_code": -1
             }
 
+    DANGEROUS_COMMAND_PATTERNS = [
+        r"\bformat\b",
+        r"\bdel\s+.*[/\\](windows|system32|users)",
+        r"\bdel\s+.*[a-zA-Z]:[/\\]",
+        r"\brmdir\s+.*[a-zA-Z]:[/\\]",
+        r"\brm\s+-rf\s+/[^a-zA-Z0-9_\.]?",
+        r"\bshutdown\b",
+        r"\breboot\b",
+        r":\(\)\s*\{\s*:\|:&\s*\}\s*;",  # Fork bomb
+        r"\bdiskpart\b",
+        r"\bvssadmin\b",
+        r"\breg\s+(delete|add)\s+hklm",
+    ]
+
     async def execute_command(
         self,
         command: str,
@@ -240,6 +254,19 @@ class SandboxSession:
         """
         start_time = time.time()
         timeout_seconds = max(1, min(int(timeout_seconds), 120))
+
+        # Security check: Block dangerous system commands
+        lowered = command.lower().strip()
+        for pattern in self.DANGEROUS_COMMAND_PATTERNS:
+            if re.search(pattern, lowered):
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": "Security violation: Dangerous destructive command blocked by sandbox security policy.",
+                    "execution_time_ms": 0,
+                    "exit_code": -1,
+                    "cwd": str(self.sandbox_dir),
+                }
 
         env = {
             "PYTHONUNBUFFERED": "1",

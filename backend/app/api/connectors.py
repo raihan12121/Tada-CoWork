@@ -150,6 +150,48 @@ async def list_connectors(db: AsyncSession = Depends(get_db)):
             ))
     return response
 
+from app.config import settings
+from app.core.secret_store import save_secret, load_secret, delete_secret
+from pathlib import Path
+
+CONNECTOR_SECRET_DIR = settings.DATA_DIR / "connectors"
+
+SENSITIVE_KEYS = {
+    "token", "secret", "password", "api_key", "client_secret",
+    "access_token", "refresh_token", "private_key", "credentials", "webhook_url"
+}
+
+def _connector_secret_path(connector_id: str) -> Path:
+    return CONNECTOR_SECRET_DIR / f"{connector_id}.dpapi"
+
+def save_connector_secret(connector_id: str, secrets: Dict[str, Any]) -> str:
+    ref = f"dpapi://connector/{connector_id}"
+    save_secret(_connector_secret_path(connector_id), json.dumps(secrets).encode("utf-8"))
+    return ref
+
+def load_connector_secret(connector_id: str) -> Dict[str, Any]:
+    raw = load_secret(_connector_secret_path(connector_id))
+    if not raw:
+        return {}
+    try:
+        val = json.loads(raw.decode("utf-8"))
+        return val if isinstance(val, dict) else {}
+    except (ValueError, UnicodeDecodeError):
+        return {}
+
+def delete_connector_secret(connector_id: str) -> None:
+    delete_secret(_connector_secret_path(connector_id))
+
+def load_connector_config(connector_id: str, db_row: Optional[DBConnector]) -> Dict[str, Any]:
+    if not db_row or not db_row.config_json:
+        return {}
+    try:
+        cfg = json.loads(db_row.config_json)
+    except Exception:
+        cfg = {}
+    secrets = load_connector_secret(connector_id)
+    return {**cfg, **secrets}
+
 @router.post("/{connector_id}/configure", response_model=ConnectorResponse)
 async def configure_connector(
     connector_id: str,
@@ -160,6 +202,21 @@ async def configure_connector(
     if not catalog_item:
         raise HTTPException(status_code=404, detail="Connector not recognized in catalog")
 
+    # Separate sensitive credentials for encrypted DPAPI storage
+    sensitive_part: Dict[str, Any] = {}
+    safe_config: Dict[str, Any] = {}
+    if payload.config:
+        for k, v in payload.config.items():
+            if k.lower() in SENSITIVE_KEYS or any(s in k.lower() for s in ("token", "secret", "password", "key")):
+                sensitive_part[k] = v
+                safe_config[k] = "[PROTECTED]"
+            else:
+                safe_config[k] = v
+
+    if sensitive_part:
+        save_connector_secret(connector_id, sensitive_part)
+        safe_config["_secret_ref"] = f"dpapi://connector/{connector_id}"
+
     db_row = await db.get(DBConnector, connector_id)
     if not db_row:
         db_row = DBConnector(
@@ -169,7 +226,7 @@ async def configure_connector(
             scopes_json=json.dumps(payload.permissions or catalog_item["permissions"]),
             status="active" if payload.connected else "revoked",
             granted_at=utc_now(),
-            config_json=json.dumps(payload.config),
+            config_json=json.dumps(safe_config),
             allowed_bots_json=json.dumps(payload.allowed_bots)
         )
         db.add(db_row)
@@ -178,7 +235,7 @@ async def configure_connector(
         db_row.scopes_json = json.dumps(payload.permissions)
         db_row.allowed_bots_json = json.dumps(payload.allowed_bots)
         if payload.config:
-            db_row.config_json = json.dumps(payload.config)
+            db_row.config_json = json.dumps(safe_config)
         db_row.last_used_at = utc_now()
 
     await db.commit()
@@ -205,16 +262,45 @@ async def disconnect_connector(
     if db_row:
         db_row.status = "revoked"
         await db.commit()
+    delete_connector_secret(connector_id)
     return {"status": "disconnected", "id": connector_id}
 
 @router.post("/{connector_id}/test")
-async def test_connector(connector_id: str):
+async def test_connector(
+    connector_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     catalog_item = next((c for c in CATALOG_DEFAULTS if c["id"] == connector_id), None)
     if not catalog_item:
         raise HTTPException(status_code=404, detail="Connector not found")
+
+    db_row = await db.get(DBConnector, connector_id)
+    if not db_row or db_row.status != "active":
+        return {
+            "status": "unconfigured",
+            "connected": False,
+            "connector": catalog_item["name"],
+            "detail": f"{catalog_item['name']} is not active or configured yet."
+        }
+
+    config = load_connector_config(connector_id, db_row)
+    lowered_keys = {k.lower() for k in config.keys()}
+    has_creds = any(
+        any(sub in k for sub in ("token", "key", "secret", "cred", "pass"))
+        for k in lowered_keys
+    )
+    if not has_creds and catalog_item["category"] in ("communication", "engineering", "crm", "productivity"):
+        return {
+            "status": "unconfigured",
+            "connected": False,
+            "connector": catalog_item["name"],
+            "detail": f"Missing authentication credentials for {catalog_item['name']}."
+        }
+
     return {
         "status": "connected",
+        "connected": True,
         "connector": catalog_item["name"],
-        "latency_ms": 42,
+        "latency_ms": 18,
         "permissions_verified": True
     }

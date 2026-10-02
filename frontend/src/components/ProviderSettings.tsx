@@ -50,7 +50,10 @@ export const ProviderSettings: React.FC = () => {
       setModel(s.model || ''); 
       setConfigured(s.configured); 
     }).catch(() => setStatus('Unable to load provider settings')); 
-    refresh(); 
+    api.listProviderAccounts().then(setAccounts).catch((e) => {
+      setStatus(e instanceof Error ? e.message : 'Unable to load accounts');
+    });
+    api.listMcpServers().then(setMcpServers).catch(() => {});
   }, []);
 
   const save = async () => { 

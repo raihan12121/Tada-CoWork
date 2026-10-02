@@ -184,7 +184,7 @@ async def download_apk():
         return JSONResponse(status_code=404, content={"detail": "APK is currently building or not yet compiled."})
     return FileResponse(
         path=str(apk_path),
-        filename="TadaCoWork.apk",
+        filename="AnyWork.apk",
         media_type="application/vnd.android.package-archive"
     )
 

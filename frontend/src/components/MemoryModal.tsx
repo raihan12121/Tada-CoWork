@@ -48,23 +48,24 @@ export const MemoryModal: React.FC<MemoryModalProps> = ({
     setTimeout(() => setToast(null), 3000);
   };
 
-  const loadGlobalMemories = async () => {
-    try {
-      const [items, status] = await Promise.all([
-        api.listMemories(),
-        api.getMemoryStatus()
-      ]);
-      setGlobalMemories(items);
-      setIsMemoryEnabled(status.enabled);
-    } catch (err) {
-      console.error('Failed to load global memories:', err);
-    }
-  };
+
 
   useEffect(() => {
-    if (isOpen) {
-      loadGlobalMemories();
-    }
+    if (!isOpen) return;
+    let ignore = false;
+    Promise.all([api.listMemories(), api.getMemoryStatus()])
+      .then(([items, status]) => {
+        if (!ignore) {
+          setGlobalMemories(items);
+          setIsMemoryEnabled(status.enabled);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load global memories:', err);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

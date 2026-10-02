@@ -33,22 +33,28 @@ export const SkillsManager: React.FC<SkillsManagerProps> = ({ onSessionCreated }
   const [createDesc, setCreateDesc] = useState('');
   const [createStepsJson, setCreateStepsJson] = useState('[\n  {\n    "step_order": 1,\n    "description": "Fetch and analyze website data",\n    "tool": "web_search",\n    "risk_level": "low"\n  }\n]');
 
-  useEffect(() => {
-    loadSkills();
-  }, []);
 
-  const loadSkills = async () => {
-    try {
-      setIsLoading(true);
-      const data = await api.listSkills();
-      setSkills(data);
-    } catch (err: any) {
-      console.error('Failed to load skills:', err);
-      setErrorMessage(err.message || 'Failed to load skills');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+  useEffect(() => {
+    let ignore = false;
+    api.listSkills()
+      .then((data) => {
+        if (!ignore) {
+          setSkills(data);
+          setIsLoading(false);
+        }
+      })
+      .catch((err: any) => {
+        if (!ignore) {
+          console.error('Failed to load skills:', err);
+          setErrorMessage(err.message || 'Failed to load skills');
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleOpenRunModal = (skill: Skill) => {
     const schema = skill.parameters_schema || {};

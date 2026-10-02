@@ -61,7 +61,23 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    loadBotsAndChannels();
+    let ignore = false;
+    Promise.all([api.listBots(), api.listChannels()])
+      .then(([fetchedBots, fetchedChannels]) => {
+        if (!ignore) {
+          setBots(fetchedBots);
+          setChannels(fetchedChannels);
+          if (fetchedBots.length > 0) {
+            setActiveBotId((prev) => prev || fetchedBots[0].id);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load bots or channels:', err);
+      });
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   // Isolate sessions per selected bot or channel
@@ -144,7 +160,7 @@ export const App: React.FC = () => {
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, activeBotId, activeChannelId]);
 
   // Sending message in AnyWork chat
   const handleSendMessage = async (text: string, files?: File[]) => {

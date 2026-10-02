@@ -36,7 +36,9 @@ export const BridgeManager: React.FC<{ activeSessionId?: string }> = ({ activeSe
         if (!ignore) setDomains(session.granted_domains || []);
       }).catch(console.error);
     } else {
-      setDomains([]);
+      Promise.resolve().then(() => {
+        if (!ignore) setDomains([]);
+      });
     }
     return () => { ignore = true; };
   }, [activeSessionId]);

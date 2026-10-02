@@ -15,8 +15,6 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   bots,
   onCreateChannel
 }) => {
-  if (!isOpen) return null;
-
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
@@ -38,6 +36,9 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
         description: description.trim() || undefined,
         bot_ids: selectedBotIds
       });
+      setName('');
+      setDescription('');
+      setSelectedBotIds([]);
       onClose();
     } catch (err) {
       console.error('Failed to create channel:', err);
@@ -45,6 +46,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">

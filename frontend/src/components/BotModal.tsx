@@ -24,8 +24,6 @@ export const BotModal: React.FC<BotModalProps> = ({
   onDelete,
   onExportTemplate
 }) => {
-  if (!isOpen) return null;
-
   const [name, setName] = useState(bot?.name || '');
   const [avatar, setAvatar] = useState(bot?.avatar || '🤖');
   const [roleTag, setRoleTag] = useState(bot?.role_tag || '');
@@ -35,6 +33,18 @@ export const BotModal: React.FC<BotModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [memoryInput, setMemoryInput] = useState('');
   const [memories, setMemories] = useState<string[]>(bot?.individual_memory || []);
+
+  const [prevBotId, setPrevBotId] = useState<string | null | undefined>(bot?.id);
+  if (bot?.id !== prevBotId) {
+    setPrevBotId(bot?.id);
+    setName(bot?.name || '');
+    setAvatar(bot?.avatar || '🤖');
+    setRoleTag(bot?.role_tag || '');
+    setDescription(bot?.description || '');
+    setFolderName(bot?.folder_name || 'General');
+    setPinned(bot?.pinned || false);
+    setMemories(bot?.individual_memory || []);
+  }
 
   const handleAddMemory = () => {
     if (!memoryInput.trim()) return;
@@ -67,6 +77,8 @@ export const BotModal: React.FC<BotModalProps> = ({
       setIsSaving(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
