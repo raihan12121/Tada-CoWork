@@ -385,8 +385,9 @@ export const RoutinesModal: React.FC<RoutinesModalProps> = ({
                         <span className="truncate flex-1">{url}</span>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(url);
-                            showToast('Copied webhook URL to clipboard');
+                            navigator.clipboard.writeText(url)
+                              .then(() => showToast('Copied webhook URL to clipboard'))
+                              .catch(() => showToast('Failed to copy to clipboard'));
                           }}
                           className="text-zinc-400 hover:text-white p-1"
                         >

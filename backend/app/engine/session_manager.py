@@ -68,7 +68,7 @@ class SessionManager:
         return recovered
 
     def subscribe_events(self, session_id: str) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
         if session_id not in self._ws_subscribers:
             self._ws_subscribers[session_id] = []
         self._ws_subscribers[session_id].append(q)
@@ -82,9 +82,16 @@ class SessionManager:
                 pass
 
     async def broadcast_event(self, event: ActivityFeedEvent):
-        queues = self._ws_subscribers.get(event.session_id, [])
+        queues = list(self._ws_subscribers.get(event.session_id, []))
         for q in queues:
-            await q.put(event)
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                    q.put_nowait(event)
+                except Exception:
+                    pass
 
     async def create_session(self, task_data: SessionCreate) -> SessionModel:
         org_policy_manager.assert_data_region_available(task_data.workspace_id)
