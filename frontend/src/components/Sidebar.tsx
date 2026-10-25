@@ -104,9 +104,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="h-14 px-3 flex items-center justify-between border-b border-white/[0.06] bg-black/40">
         {!isCollapsed ? (
           <div className="flex items-center gap-2.5 pl-1">
-            {/* AnyWork Grokbot Angular Slash Emblem */}
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 flex items-center justify-center text-black font-black text-sm tracking-tighter shadow-[0_2px_8px_rgba(255,255,255,0.12)]">
-              <span className="transform -skew-x-12 select-none">/</span>
+            {/* AnyWork High-Tech Quantum Slash Emblem */}
+            <div className="relative group/logo">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-[#181824] to-[#08080d] border border-cyan-500/40 shadow-[0_0_14px_rgba(34,211,238,0.3)] flex items-center justify-center overflow-hidden">
+                <svg className="w-4 h-4" viewBox="0 0 128 128" fill="none">
+                  <polygon points="44,28 56,28 40,100 28,100" fill="#22d3ee" />
+                  <polygon points="76,28 88,28 72,100 60,100" fill="#ffffff" />
+                </svg>
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
@@ -117,8 +122,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ) : (
           <div className="w-full flex justify-center">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white to-zinc-200 flex items-center justify-center text-black font-black text-sm shadow-md">
-              <span className="transform -skew-x-12 select-none">/</span>
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-[#181824] to-[#08080d] border border-cyan-500/40 shadow-[0_0_14px_rgba(34,211,238,0.3)] flex items-center justify-center overflow-hidden">
+              <svg className="w-4 h-4" viewBox="0 0 128 128" fill="none">
+                <polygon points="44,28 56,28 40,100 28,100" fill="#22d3ee" />
+                <polygon points="76,28 88,28 72,100 60,100" fill="#ffffff" />
+              </svg>
             </div>
           </div>
         )}
@@ -354,59 +362,70 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* The Four Cs Navigation Pill Stack */}
-      <div className="p-2 border-t border-white/[0.06] bg-[#050507] space-y-0.5">
+      {/* Utility Navigation */}
+      <div className="p-2 border-t border-white/[0.06] bg-[#050507] space-y-1">
         <button
           onClick={onOpenConnectionsModal}
-          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-white transition group ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title="Connections & Plugins (Gmail, Calendar, Slack)"
         >
-          <Webhook className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+          <div className="p-1 rounded-md bg-white/[0.04] border border-white/[0.06] group-hover:border-indigo-400/40 transition shrink-0">
+            <Webhook className="w-3.5 h-3.5 text-indigo-400" />
+          </div>
           {!isCollapsed && <span>Connections & Plugins</span>}
         </button>
 
         <button
           onClick={onOpenRoutinesModal}
-          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-white transition group ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title="Routines & Cadence (Scheduled Cron & Webhooks)"
         >
-          <CalendarClock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          <div className="p-1 rounded-md bg-white/[0.04] border border-white/[0.06] group-hover:border-blue-400/40 transition shrink-0">
+            <CalendarClock className="w-3.5 h-3.5 text-blue-400" />
+          </div>
           {!isCollapsed && <span>Routines & Cadence</span>}
         </button>
 
         <button
           onClick={onOpenMemoryModal}
-          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-white transition group ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title="Context & Memory (Global & Bot Directives)"
         >
-          <BrainCircuit className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          <div className="p-1 rounded-md bg-white/[0.04] border border-white/[0.06] group-hover:border-purple-400/40 transition shrink-0">
+            <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
+          </div>
           {!isCollapsed && <span>Context & Memory</span>}
         </button>
 
         <button
           onClick={onOpenSkillsModal}
-          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-white transition group ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title="Capabilities & Skills (Slash commands & Teach a Task)"
         >
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <div className="p-1 rounded-md bg-white/[0.04] border border-white/[0.06] group-hover:border-cyan-400/40 transition shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+          </div>
           {!isCollapsed && <span>Capabilities & Skills</span>}
         </button>
 
         <button
           onClick={onOpenSettingsModal}
-          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200 transition ${
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:bg-white/[0.05] hover:text-white transition group ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title="AI Providers, MCP & Sandbox Settings"
         >
-          <Settings className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+          <div className="p-1 rounded-md bg-white/[0.04] border border-white/[0.06] group-hover:border-zinc-400/40 transition shrink-0">
+            <Settings className="w-3.5 h-3.5 text-zinc-400" />
+          </div>
           {!isCollapsed && <span>AI Models & Settings</span>}
         </button>
       </div>

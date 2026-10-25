@@ -283,3 +283,76 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .animate-slideDownFade {
   animation: slideDownFade 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Elite Action & Icon Utilities */
+.btn-glow-cyan {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%);
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  padding: 7px 14px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-glow-cyan:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.3) 0%, rgba(6, 182, 212, 0.18) 100%);
+  border-color: rgba(34, 211, 238, 0.6);
+  color: #ffffff;
+  transform: translateY(-0.5px);
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.btn-glow-cyan:active:not(:disabled) {
+  transform: translateY(0.5px) scale(0.985);
+}
+
+.btn-danger {
+  background-color: rgba(244, 63, 94, 0.1);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  padding: 6px 12px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.45);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.2);
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease;
+}
+
+.icon-badge:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}

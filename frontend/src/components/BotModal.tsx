@@ -238,7 +238,7 @@ export const BotModal: React.FC<BotModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onDuplicate(bot.id)}
-                  className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/[0.06] transition"
+                  className="icon-badge p-2 text-zinc-400 hover:text-white"
                   title="Duplicate Bot"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -248,7 +248,7 @@ export const BotModal: React.FC<BotModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onExportTemplate(bot.id)}
-                  className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/[0.06] transition"
+                  className="icon-badge p-2 text-zinc-400 hover:text-white"
                   title="Export Template JSON"
                 >
                   <Share2 className="w-3.5 h-3.5" />
@@ -258,7 +258,7 @@ export const BotModal: React.FC<BotModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onDelete(bot.id)}
-                  className="p-2 text-zinc-400 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition"
+                  className="icon-badge p-2 text-zinc-400 hover:text-rose-400 hover:border-rose-500/30 hover:bg-rose-500/10"
                   title="Delete Bot"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

@@ -201,14 +201,14 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             onClick={onToggleComputer}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition duration-150 border ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition duration-150 border ${
               isComputerOpen
-                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.2)]'
-                : 'bg-white/[0.04] text-zinc-300 border-white/[0.07] hover:bg-white/[0.08] hover:text-white'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-[0_0_16px_rgba(34,211,238,0.25)]'
+                : 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.08] hover:text-white'
             }`}
             title="Toggle Agent Computer (Browser, Shared Files, Terminal)"
           >
-            <Monitor className="w-3.5 h-3.5" />
+            <Monitor className="w-3.5 h-3.5 text-cyan-400" />
             <span>Computer</span>
           </button>
 
@@ -217,7 +217,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
               {onOpenRoutinesModal && (
                 <button
                   onClick={onOpenRoutinesModal}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
                   title="Cadence: Scheduled Cron & Inbound Webhooks"
                 >
                   <CalendarClock className="w-3.5 h-3.5 text-blue-400" />
@@ -228,7 +228,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
               {onOpenMemoryModal && (
                 <button
                   onClick={onOpenMemoryModal}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
                   title="Context: Dual Workspace vs Individual Memory"
                 >
                   <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
@@ -239,7 +239,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
               {onOpenSkillsModal && (
                 <button
                   onClick={onOpenSkillsModal}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
                   title="Capabilities: Skills Library & Teach a Task"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
@@ -249,7 +249,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
 
               <button
                 onClick={onExportTemplate}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
                 title="Share as Template"
               >
                 <Share2 className="w-3.5 h-3.5" />
@@ -258,7 +258,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
 
               <button
                 onClick={onOpenBotSettings}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition"
                 title="Bot Persona & Model Settings"
               >
                 <Settings className="w-3.5 h-3.5" />

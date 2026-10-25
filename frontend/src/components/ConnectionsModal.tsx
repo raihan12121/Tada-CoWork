@@ -42,9 +42,9 @@ const DEFAULT_CONNECTORS: Connector[] = [
     category: 'productivity',
     description: 'Autonomous inbox zero triage, drafting email responses, and thread labeling.',
     icon: Mail,
-    connected: true,
+    connected: false,
     permissions: ['gmail.readonly', 'gmail.compose', 'gmail.modify'],
-    allowedBots: ['all']
+    allowedBots: []
   },
   {
     id: 'calendar',
@@ -52,9 +52,9 @@ const DEFAULT_CONNECTORS: Connector[] = [
     category: 'productivity',
     description: 'Reads schedule availability, books meetings, and handles conflict resolution.',
     icon: Calendar,
-    connected: true,
+    connected: false,
     permissions: ['calendar.events.readonly', 'calendar.events.write'],
-    allowedBots: ['all']
+    allowedBots: []
   },
   {
     id: 'slack',
@@ -62,9 +62,9 @@ const DEFAULT_CONNECTORS: Connector[] = [
     category: 'communication',
     description: 'Listens to team channels, joins threads on mention, and sends direct status alerts.',
     icon: MessageSquare,
-    connected: true,
+    connected: false,
     permissions: ['channels:read', 'chat:write', 'reactions:write'],
-    allowedBots: ['all']
+    allowedBots: []
   },
   {
     id: 'clickup',
@@ -92,9 +92,9 @@ const DEFAULT_CONNECTORS: Connector[] = [
     category: 'engineering',
     description: 'Analyzes pull requests, triggers CI runs, reviews code diffs, and opens issues.',
     icon: GitBranch,
-    connected: true,
+    connected: false,
     permissions: ['repo:status', 'pull_requests:write', 'issues:write'],
-    allowedBots: ['all']
+    allowedBots: []
   },
   {
     id: 'composio',
@@ -102,9 +102,9 @@ const DEFAULT_CONNECTORS: Connector[] = [
     category: 'engineering',
     description: 'Universal connector for 250+ enterprise SaaS apps, custom APIs, and event webhooks.',
     icon: Webhook,
-    connected: true,
+    connected: false,
     permissions: ['webhook:deliver', 'tools:execute'],
-    allowedBots: ['all']
+    allowedBots: []
   },
   {
     id: 'hubspot',
@@ -278,7 +278,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-b from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-zinc-200">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-b from-white/10 to-white/5 border border-white/10 flex items-center justify-center text-zinc-200 shadow-sm group-hover:border-cyan-500/30 group-hover:text-cyan-300 transition">
                           <Icon className="w-5 h-5" />
                         </div>
                         <div>
@@ -287,7 +287,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
                             <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                               connector.connected 
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' 
-                                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/60'
                             }`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${connector.connected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-zinc-500'}`} />
                               {connector.connected ? 'Connected' : 'Disconnected'}
@@ -301,10 +301,10 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
 
                       <button
                         onClick={() => toggleConnection(connector.id)}
-                        className={`text-xs px-3 py-1.5 rounded-xl font-medium transition pressable ${
+                        className={`text-xs px-3.5 py-1.5 rounded-xl font-medium transition pressable ${
                           connector.connected
-                            ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
-                            : 'bg-white text-black hover:bg-zinc-200 font-semibold shadow-xs'
+                            ? 'btn-danger'
+                            : 'btn-primary'
                         }`}
                       >
                         {connector.connected ? 'Disconnect' : 'Connect'}

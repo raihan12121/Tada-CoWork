@@ -300,7 +300,7 @@ async def get_bot_routines(
     if not row:
         raise HTTPException(status_code=404, detail="Bot not found")
     
-    # Return standard Grokbot default routines + custom schedules
+    # Return available bot routine templates (clean state, no fake demo runs)
     routines = [
         {
             "id": f"routine_{bot_id}_daily",
@@ -308,9 +308,9 @@ async def get_bot_routines(
             "type": "scheduled",
             "cadence": "Every weekday at 7:00 AM",
             "cron": "0 7 * * 1-5",
-            "is_active": True,
-            "last_status": "success",
-            "last_run": "Today at 7:00 AM"
+            "is_active": False,
+            "last_status": "idle",
+            "last_run": None
         },
         {
             "id": f"routine_{bot_id}_weekly",
@@ -318,9 +318,9 @@ async def get_bot_routines(
             "type": "scheduled",
             "cadence": "Every Sunday at 8:00 PM",
             "cron": "0 20 * * 0",
-            "is_active": True,
-            "last_status": "success",
-            "last_run": "Sunday at 8:00 PM"
+            "is_active": False,
+            "last_status": "idle",
+            "last_run": None
         },
         {
             "id": f"routine_{bot_id}_webhook",
@@ -329,8 +329,8 @@ async def get_bot_routines(
             "cadence": "Instant on HTTP POST",
             "webhook_url": f"/v1/bots/{bot_id}/webhook",
             "is_active": True,
-            "last_status": "success",
-            "last_run": "2 hours ago"
+            "last_status": "idle",
+            "last_run": None
         }
     ]
     return routines
