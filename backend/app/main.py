@@ -30,6 +30,8 @@ from app.api.swarm import router as swarm_router
 from app.api.bots import router as bots_router
 from app.api.channels import router as channels_router
 from app.api.connectors import router as connectors_router
+from app.api.browser_api import router as browser_router
+from app.sandbox.browser_service import browser_service
 from app.engine.scheduler import scheduler_engine
 from app.db.session import AsyncSessionLocal, DBOrganization
 from sqlalchemy import select
@@ -90,6 +92,7 @@ async def lifespan(app: FastAPI):
     await mcp_manager.sync_all_servers()
     yield
     await scheduler_engine.stop()
+    browser_service.close()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -175,6 +178,7 @@ app.include_router(swarm_router, prefix=settings.API_V1_STR)
 app.include_router(bots_router, prefix=settings.API_V1_STR)
 app.include_router(channels_router, prefix=settings.API_V1_STR)
 app.include_router(connectors_router, prefix=settings.API_V1_STR)
+app.include_router(browser_router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

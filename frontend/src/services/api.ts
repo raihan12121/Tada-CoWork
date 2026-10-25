@@ -650,5 +650,44 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to test connector');
     return res.json();
+  },
+
+  // Native Chromium Agent Computer Browser
+  async getBrowserStatus(): Promise<{ alive: boolean; url: string; title: string; port: number; persistent_profile: string }> {
+    const res = await apiFetch(`${API_BASE}/browser/status`);
+    if (!res.ok) throw new Error('Failed to get browser status');
+    return res.json();
+  },
+
+  async navigateBrowser(url: string): Promise<{ success: boolean; url: string; title: string; screenshot?: string; error?: string }> {
+    const res = await apiFetch(`${API_BASE}/browser/navigate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to navigate browser');
+    return res.json();
+  },
+
+  async executeBrowserAction(action: string, params: { x?: number; y?: number; text?: string; key?: string; delta_y?: number } = {}): Promise<any> {
+    const res = await apiFetch(`${API_BASE}/browser/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...params })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Failed to execute browser action');
+    return res.json();
+  },
+
+  async getBrowserScreenshot(): Promise<{ screenshot: string }> {
+    const res = await apiFetch(`${API_BASE}/browser/screenshot`);
+    if (!res.ok) throw new Error('Failed to get screenshot');
+    return res.json();
+  },
+
+  async getBrowserContent(): Promise<{ text: string }> {
+    const res = await apiFetch(`${API_BASE}/browser/content`);
+    if (!res.ok) throw new Error('Failed to get browser content');
+    return res.json();
   }
 };

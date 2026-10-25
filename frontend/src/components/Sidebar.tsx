@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { Session, Bot, Channel } from '../types';
 import { api } from '../services/api';
+import { DynamicAvatar } from './DynamicAvatar';
 
 interface SidebarProps {
   sessions: Session[];
@@ -40,25 +41,7 @@ interface SidebarProps {
   onOpenSettingsModal: () => void;
 }
 
-// Polished Bot Avatar Pod
-const BotAvatarBadge: React.FC<{ avatar: string; isSelected?: boolean; size?: 'sm' | 'md' }> = ({
-  avatar,
-  isSelected = false,
-  size = 'md'
-}) => {
-  const sizeClasses = size === 'sm' ? 'w-6 h-6 text-xs' : 'w-7 h-7 text-sm';
-  return (
-    <div 
-      className={`${sizeClasses} rounded-lg flex items-center justify-center shrink-0 transition-all duration-150 ${
-        isSelected 
-          ? 'bg-gradient-to-b from-white/20 to-white/10 text-white shadow-xs border border-white/25' 
-          : 'bg-white/[0.06] border border-white/[0.08] text-zinc-300 group-hover:border-white/15 group-hover:bg-white/[0.09]'
-      }`}
-    >
-      <span className="leading-none select-none">{avatar}</span>
-    </div>
-  );
-};
+// Grokbot Sidebar Navigation Component
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
   sessions, 
@@ -215,7 +198,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                       }`}
                     >
-                      <BotAvatarBadge avatar={b.avatar} isSelected={isSelected} size="md" />
+                      <DynamicAvatar avatar={b.avatar} name={b.name} role={b.role_tag} status={isSelected ? 'running' : 'idle'} size="sm" />
                       <div className="min-w-0 flex-1 truncate">
                         <p className={`text-xs font-medium truncate ${isSelected ? 'text-white' : 'text-zinc-200'}`}>{b.name}</p>
                         <p className="text-[10px] text-zinc-500 truncate">{b.role_tag}</p>
@@ -298,7 +281,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                                 }`}
                               >
-                                <BotAvatarBadge avatar={b.avatar} isSelected={isSelected} size="sm" />
+                                <DynamicAvatar avatar={b.avatar} name={b.name} role={b.role_tag} status={isSelected ? 'running' : 'idle'} size="sm" />
                                 <div className="min-w-0 flex-1 truncate">
                                   <p className="text-xs font-medium truncate text-zinc-200">{b.name}</p>
                                 </div>
@@ -334,7 +317,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => onSelectBot(b.id)}
                         className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 text-left transition"
                       >
-                        <BotAvatarBadge avatar={b.avatar} size="sm" />
+                        <DynamicAvatar avatar={b.avatar} name={b.name} role={b.role_tag} status="idle" size="sm" />
                         <span className="text-xs truncate">{b.name}</span>
                       </button>
                     ))}

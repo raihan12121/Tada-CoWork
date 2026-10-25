@@ -17,11 +17,14 @@ import {
   FileSpreadsheet,
   Globe,
   Film,
-  SearchCode
+  SearchCode,
+  Mic
 } from 'lucide-react';
 import type { Bot, Channel, Session, ActivityEvent, ApprovalRequest, Artifact } from '../types';
 import { api } from '../services/api';
 import { ApprovalPrompt } from './ApprovalPrompt';
+import { DynamicAvatar } from './DynamicAvatar';
+import { VoiceModeOrb } from './VoiceModeOrb';
 
 const DEFAULT_SLASH_SKILLS = [
   { name: 'inbox-triage', desc: 'Scan and categorize priority incoming messages', icon: Zap },
@@ -80,6 +83,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
 
   useEffect(() => {
     api.listSkills().then((data) => {
@@ -166,9 +170,13 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
       {/* Precision Top Header Bar */}
       <div className="h-14 px-5 border-b border-white/[0.07] flex items-center justify-between bg-black/40 backdrop-blur-xl z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-b from-white/15 to-white/5 border border-white/10 flex items-center justify-center text-sm shadow-xs">
-            <span className="leading-none">{avatar}</span>
-          </div>
+          <DynamicAvatar
+            avatar={avatar}
+            name={titleName}
+            role={titleTag}
+            status={isLoading ? 'thinking' : pendingApproval ? 'waiting_approval' : 'idle'}
+            size="md"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-semibold text-white tracking-tight">{titleName}</h2>
@@ -313,15 +321,27 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
           const isHandoff = evt.event_type === 'tool_start' && evt.message.includes('swarm_delegate');
           const isArtifact = evt.event_type === 'artifact_created';
 
+          // Multi-agent speaker resolution (for channels and swarm handoffs)
+          const speakerMatch = evt.message.match(/^\[([A-Za-z0-9_\-\s]+)\]:\s*([\s\S]*)/);
+          const rawSpeaker = speakerMatch ? speakerMatch[1].trim() : (evt.technical_details?.bot_name || (activeBot ? activeBot.name : titleName));
+          const cleanMessage = speakerMatch ? speakerMatch[2] : evt.message.replace(/^User:\s*/, '');
+          const matchedBot = bots.find(b => b.name.toLowerCase() === rawSpeaker.toLowerCase());
+          const speakerAvatar = matchedBot ? matchedBot.avatar : avatar;
+          const speakerRole = matchedBot ? matchedBot.role_tag : titleTag;
+
           return (
             <div key={evt.id || idx} className="space-y-1.5">
               {/* Chat Bubble */}
               {!isHandoff && (
                 <div className={`flex gap-3 group ${isUser ? 'justify-end' : 'justify-start'}`}>
                   {!isUser && (
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-b from-white/15 to-white/5 border border-white/10 flex items-center justify-center text-xs shrink-0 mt-0.5 shadow-xs">
-                      {avatar}
-                    </div>
+                    <DynamicAvatar
+                      avatar={speakerAvatar}
+                      name={rawSpeaker}
+                      role={speakerRole}
+                      size="sm"
+                      status="idle"
+                    />
                   )}
 
                   <div className={`max-w-[85%] sm:max-w-2xl rounded-2xl px-4 py-3 text-xs leading-relaxed transition ${
@@ -332,10 +352,13 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
                     {/* Header if Agent */}
                     {!isUser && (
                       <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/[0.06]">
-                        <span className="font-semibold text-[11px] text-zinc-300">{titleName}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-[11px] text-zinc-200">@{rawSpeaker}</span>
+                          <span className="text-[9px] text-zinc-500 font-mono bg-white/[0.04] px-1.5 py-0.2 rounded border border-white/[0.06]">{speakerRole}</span>
+                        </div>
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
                           <button
-                            onClick={() => setReplyingTo(evt.message.slice(0, 80))}
+                            onClick={() => setReplyingTo(cleanMessage.slice(0, 80))}
                             className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 transition"
                             title="Reply to this message"
                           >
@@ -346,7 +369,7 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
                       </div>
                     )}
 
-                    <p className="whitespace-pre-wrap">{evt.message.replace(/^User:\s*/, '')}</p>
+                    <p className="whitespace-pre-wrap">{cleanMessage}</p>
 
                     {/* Deliverable Pill if Artifact Created */}
                     {isArtifact && (
@@ -507,6 +530,15 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
               <Paperclip className="w-4 h-4" />
             </button>
 
+            <button
+              type="button"
+              onClick={() => setIsVoiceModeOpen(true)}
+              className="text-zinc-400 hover:text-cyan-400 p-2 rounded-xl hover:bg-white/[0.08] transition pressable"
+              title="Real-Time Hands-Free Voice Mode"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+
             <textarea
               ref={textareaRef}
               rows={1}
@@ -532,6 +564,17 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
           <span>Cloud VM persistent disk mounted</span>
         </div>
       </div>
+
+      {/* Real-Time Ambient Voice Mode Orb */}
+      <VoiceModeOrb
+        isOpen={isVoiceModeOpen}
+        onClose={() => setIsVoiceModeOpen(false)}
+        onSendMessage={async (msg) => {
+          await onSendMessage(msg);
+        }}
+        botName={titleName}
+        avatar={avatar}
+      />
     </div>
   );
 };

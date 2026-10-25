@@ -8,12 +8,14 @@ import threading
 import traceback
 import ctypes
 from pathlib import Path
+import webview
 
 # 1. Setup user data directory first
 USER_DATA_DIR = Path(os.getenv("APPDATA", Path.home())) / "AnyWork"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 (USER_DATA_DIR / "data").mkdir(parents=True, exist_ok=True)
 (USER_DATA_DIR / "sandboxes").mkdir(parents=True, exist_ok=True)
+(USER_DATA_DIR / "desktop").mkdir(parents=True, exist_ok=True)
 os.environ["COAGENT_DATA_DIR"] = str(USER_DATA_DIR)
 
 # Migrate database from legacy Coagent if present

@@ -74,6 +74,8 @@ hiddenimports = [
     "app.api.bots",
     "app.api.channels",
     "app.api.connectors",
+    "app.api.browser_api",
+    "app.sandbox.browser_service",
     "app.mcp.mcp_manager",
     "app.skills.skill_manager",
     "app.tools.swarm_delegate"
