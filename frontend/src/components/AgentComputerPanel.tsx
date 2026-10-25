@@ -84,7 +84,7 @@ export const AgentComputerPanel: React.FC<AgentComputerPanelProps> = ({
         if (shot.screenshot) {
           setLiveScreenshot(shot.screenshot);
         }
-      } catch (e) {
+      } catch {
         // Silent catch for initial warm-up
       }
     };
