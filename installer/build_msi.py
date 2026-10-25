@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "dist_pc" / "AnyWork"
 INSTALLER_DIR = BASE_DIR / "installer"
 OUTPUT_DIR = BASE_DIR / "dist_installer"
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
