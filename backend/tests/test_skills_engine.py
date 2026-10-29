@@ -1,3 +1,4 @@
+import uuid
 import pytest
 import httpx
 from app.main import app
@@ -5,12 +6,13 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_skills_crud_and_lifecycle():
     transport = httpx.ASGITransport(app=app)
+    skill_name = f"Competitor Price Watcher {uuid.uuid4().hex[:6]}"
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         # 1. Create a skill
         create_res = await client.post(
             "/v1/skills",
             json={
-                "name": "Competitor Price Watcher",
+                "name": skill_name,
                 "description": "Scrapes competitor pricing and builds an Excel comparison sheet",
                 "workspace_id": "default",
                 "parameters_schema": {
@@ -25,7 +27,7 @@ async def test_skills_crud_and_lifecycle():
         assert create_res.status_code == 200
         skill = create_res.json()
         skill_id = skill["id"]
-        assert skill["name"] == "Competitor Price Watcher"
+        assert skill["name"] == skill_name
         assert skill["is_active"] is True
 
         # 2. List skills
@@ -37,7 +39,7 @@ async def test_skills_crud_and_lifecycle():
         # 3. Get single skill
         get_res = await client.get(f"/v1/skills/{skill_id}")
         assert get_res.status_code == 200
-        assert get_res.json()["name"] == "Competitor Price Watcher"
+        assert get_res.json()["name"] == skill_name
 
         # 4. Run skill
         run_res = await client.post(
@@ -48,7 +50,7 @@ async def test_skills_crud_and_lifecycle():
         )
         assert run_res.status_code == 200
         run_session = run_res.json()
-        assert "Competitor Price Watcher" in run_session["task"]
+        assert skill_name in run_session["task"]
 
         # 5. Delete skill
         del_res = await client.delete(f"/v1/skills/{skill_id}")

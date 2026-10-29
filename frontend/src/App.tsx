@@ -365,6 +365,7 @@ export const App: React.FC = () => {
             onOpenRoutinesModal={() => setRoutinesModalOpen(true)}
             onOpenMemoryModal={() => setMemoryModalOpen(true)}
             onOpenSkillsModal={() => setSkillsModalOpen(true)}
+            onOpenSettingsModal={() => setSettingsModalOpen(true)}
           />
 
           {/* Split-pane Agent Computer */}

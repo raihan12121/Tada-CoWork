@@ -16,7 +16,7 @@ import { api } from '../services/api';
 import type { ProviderAccount } from '../services/api';
 import type { McpServer } from '../types';
 
-type Provider = 'openai' | 'openai_codex' | 'anthropic' | 'anthropic_claude' | 'gemini' | 'ollama' | 'lm_studio' | 'offline_heuristic';
+type Provider = 'gemini' | 'xai' | 'openai' | 'openai_codex' | 'anthropic' | 'anthropic_claude' | 'ollama' | 'lm_studio' | 'offline_heuristic';
 
 export const ProviderSettings: React.FC = () => {
   const [provider, setProvider] = useState<Provider>('offline_heuristic');
@@ -207,15 +207,36 @@ export const ProviderSettings: React.FC = () => {
             Provider Engine
             <select 
               value={provider} 
-              onChange={e => setProvider(e.target.value as Provider)} 
+              onChange={e => {
+                const next = e.target.value as Provider;
+                setProvider(next);
+                if (next === 'gemini') {
+                  setModel('gemini-2.0-flash');
+                  setLabel('Google Gemini 2.0 Account');
+                } else if (next === 'xai') {
+                  setModel('grok-2-1212');
+                  setLabel('xAI Grok Production');
+                } else if (next === 'anthropic') {
+                  setModel('claude-3-7-sonnet-20250219');
+                  setLabel('Anthropic Claude Account');
+                } else if (next === 'openai') {
+                  setModel('gpt-4o');
+                  setLabel('OpenAI Primary Account');
+                } else if (next === 'ollama') {
+                  setModel('llama3.2');
+                  setEndpoint('http://127.0.0.1:11434/v1');
+                  setLabel('Local Ollama Server');
+                }
+              }} 
               className="mt-1.5 w-full bg-[#121215] border border-white/[0.08] rounded-xl p-2.5 text-xs text-white focus:outline-none"
             >
-              <option value="openai">OpenAI API (GPT-4o / o1)</option>
+              <option value="gemini">Google Gemini 2.0 (Gemini 2.0 Flash / Pro) [Flagship]</option>
+              <option value="xai">xAI Grok API (Grok-2 / Grok-beta)</option>
+              <option value="anthropic">Anthropic API (Claude 3.7 / 3.5 Sonnet)</option>
+              <option value="openai">OpenAI API (GPT-4o / o1 / o3-mini)</option>
+              <option value="ollama">Ollama (Local Offline · 100% Private)</option>
               <option value="openai_codex">ChatGPT Subscription via Codex CLI</option>
-              <option value="anthropic">Anthropic API (Claude 3.7 Sonnet)</option>
               <option value="anthropic_claude">Claude Subscription via Claude Code CLI</option>
-              <option value="gemini">Google Gemini API (Gemini 2.5 Flash / Pro)</option>
-              <option value="ollama">Ollama (Local Offline)</option>
               <option value="lm_studio">LM Studio (Local Offline)</option>
               <option value="offline_heuristic">Offline Preview (No External AI)</option>
             </select>

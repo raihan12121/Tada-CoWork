@@ -520,7 +520,7 @@ class ExecutorSession:
         await self.emit_event(
             "tool_end",
             f"{tool_name} returned {'success' if result.get('success') else 'failure'}.",
-            {"tool": tool_name, "success": result.get("success", False), "time_ms": exec_time_ms},
+            {"tool": tool_name, "success": result.get("success", False), "time_ms": exec_time_ms, "result": result},
             step_id=step.id,
         )
 

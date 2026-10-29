@@ -25,7 +25,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 class Settings:
     APP_ENV: str = os.getenv("APP_ENV", "development")
     PROJECT_NAME: str = "AnyWork"
-    VERSION: str = "1.0.6"
+    VERSION: str = "1.1.5"
     API_V1_STR: str = "/v1"
     API_AUTH_TOKEN: str = os.getenv("COAGENT_API_AUTH_TOKEN", "")
     ADMIN_TOKEN: str = os.getenv("COAGENT_ADMIN_TOKEN", "")

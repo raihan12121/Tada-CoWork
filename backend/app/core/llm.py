@@ -113,6 +113,40 @@ class AnthropicLLMProvider(BaseLLMProvider):
         prior_observations: List[Dict[str, Any]],
         tools_available: List[str]
     ) -> Dict[str, Any]:
+        system_prompt = (
+            "You are the Coagent Reasoner. You must return ONLY a JSON object with keys: "
+            "thought (string), narration (string explaining the action), tool (one of the available tools), params (object of parameters)."
+        )
+        content_prompt = json.dumps({
+            "task": task,
+            "step": step.model_dump(),
+            "observations": prior_observations[-5:],
+            "tools": tools_available
+        })
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                resp = await client.post(
+                    self.endpoint,
+                    headers={
+                        "x-api-key": self.api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json"
+                    },
+                    json={
+                        "model": "claude-3-7-sonnet-20250219",
+                        "max_tokens": 1024,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": content_prompt}]
+                    }
+                )
+                if resp.status_code == 200:
+                    text = resp.json()["content"][0]["text"]
+                    start = text.find("{")
+                    end = text.rfind("}") + 1
+                    if start != -1 and end != -1:
+                        return json.loads(text[start:end])
+        except Exception:
+            pass
         return OfflineHeuristicProvider().reason_step_sync(task, step, prior_observations, tools_available)
 
 
@@ -256,24 +290,53 @@ class AnthropicClaudeCLIProvider(BaseLLMProvider):
 
 
 class GeminiLLMProvider(OpenAILLMProvider):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = ""):
         super().__init__(api_key)
-        self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}:generateContent?key={api_key}"
+        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={api_key}"
 
     async def _json_call(self, system: str, prompt: str) -> Dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=45.0) as client:
-                response = await client.post(self.endpoint, json={"contents": [{"parts": [{"text": f"{system}\n{prompt}"}]}]})
+                response = await client.post(
+                    self.endpoint,
+                    json={
+                        "contents": [{"parts": [{"text": f"{system}\n{prompt}"}]}],
+                        "generationConfig": {"responseMimeType": "application/json"}
+                    }
+                )
                 if response.status_code == 429:
                     raise RuntimeError("Gemini quota exhausted or rate limited (HTTP 429)")
                 if response.status_code in {401, 403}:
                     raise RuntimeError(f"Gemini authentication or permission failed (HTTP {response.status_code})")
                 response.raise_for_status()
-                text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                payload = response.json()
+                text = payload["candidates"][0]["content"]["parts"][0]["text"]
                 start, end = text.find("{"), text.rfind("}") + 1
                 return json.loads(text[start:end]) if start >= 0 and end > start else {}
         except Exception as exc:
             raise RuntimeError(f"Gemini provider request failed: {exc}") from exc
+
+    async def reason_step(
+        self,
+        task: str,
+        step: StepBase,
+        prior_observations: List[Dict[str, Any]],
+        tools_available: List[str]
+    ) -> Dict[str, Any]:
+        data = await self._json_call(
+            "Return only valid JSON with keys thought, narration, tool, params. Choose only an available tool.",
+            json.dumps({"task": task, "step": step.model_dump(), "observations": prior_observations[-5:], "tools": tools_available})
+        )
+        return data or OfflineHeuristicProvider().reason_step_sync(task, step, prior_observations, tools_available)
+
+
+class XAILLMProvider(OpenAILLMProvider):
+    """xAI Grok-2 / Grok-beta LLM Provider."""
+    def __init__(self, api_key: str, model: str = ""):
+        super().__init__(api_key)
+        self.endpoint = "https://api.x.ai/v1/chat/completions"
+        self.model = model or os.getenv("XAI_MODEL", "grok-2-1212")
 
 
 class OpenAICompatibleLLMProvider(OpenAILLMProvider):
@@ -585,10 +648,30 @@ def configure_runtime_provider(provider: str, api_key: str = "", endpoint: str =
 
 
 def current_provider_config() -> Dict[str, Any]:
-    provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
+    provider = _runtime_provider.get("provider")
     key = _runtime_provider.get("api_key", "")
-    configured = bool(key) if provider in {"openai", "anthropic", "gemini"} else provider in {"openai_codex", "anthropic_claude", "ollama", "lm_studio"}
-    return {"provider": provider, "model": _runtime_provider.get("model") or os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "configured": configured, "account_id": _runtime_provider.get("account_id") or None}
+    model = _runtime_provider.get("model", "")
+    account_id = _runtime_provider.get("account_id") or None
+
+    if provider == "offline_heuristic":
+        return {"provider": "offline_heuristic", "model": "built-in", "configured": False, "source": "offline", "account_id": None}
+
+    # Check environment variable auto-detection if no runtime provider is configured
+    if not provider:
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            if os.getenv("GEMINI_API_KEY"):
+                return {"provider": "gemini", "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), "configured": True, "source": "environment", "account_id": None}
+            if os.getenv("ANTHROPIC_API_KEY"):
+                return {"provider": "anthropic", "model": os.getenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219"), "configured": True, "source": "environment", "account_id": None}
+            if os.getenv("OPENAI_API_KEY"):
+                return {"provider": "openai", "model": os.getenv("OPENAI_MODEL", "gpt-4o"), "configured": True, "source": "environment", "account_id": None}
+            if os.getenv("XAI_API_KEY"):
+                return {"provider": "xai", "model": os.getenv("XAI_MODEL", "grok-2-1212"), "configured": True, "source": "environment", "account_id": None}
+        return {"provider": "offline_heuristic", "model": "built-in", "configured": False, "source": "offline", "account_id": None}
+
+    configured = bool(key) if provider in {"openai", "anthropic", "gemini", "xai"} else provider in {"openai_codex", "anthropic_claude", "ollama", "lm_studio"}
+    default_model = "gemini-2.0-flash" if provider == "gemini" else "grok-2-1212" if provider == "xai" else "gpt-4o" if provider == "openai" else "claude-3-7-sonnet-20250219" if provider == "anthropic" else "llama3.2"
+    return {"provider": provider, "model": model or default_model, "configured": configured, "account_id": account_id}
 
 
 def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str = "", model: str = "") -> BaseLLMProvider:
@@ -602,8 +685,10 @@ def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str =
         if model:
             client.model = model
         return client
+    if provider == "xai" and api_key:
+        return XAILLMProvider(api_key, model)
     if provider == "gemini" and api_key:
-        return GeminiLLMProvider(api_key)
+        return GeminiLLMProvider(api_key, model)
     if provider == "anthropic" and api_key:
         return AnthropicLLMProvider(api_key)
     if provider in {"ollama", "lm_studio"}:
@@ -614,17 +699,39 @@ def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str =
 
 
 def get_llm_client() -> BaseLLMProvider:
-    provider = _runtime_provider.get("provider") or settings.DEFAULT_PROVIDER
-    api_key = _runtime_provider.get("api_key", "") or {
-        "openai": settings.OPENAI_API_KEY,
-        "anthropic": settings.ANTHROPIC_API_KEY,
-        "gemini": settings.GEMINI_API_KEY,
+    provider = _runtime_provider.get("provider")
+    api_key = _runtime_provider.get("api_key", "")
+    
+    if provider == "offline_heuristic":
+        return OfflineHeuristicProvider()
+
+    # Auto-detection hierarchy if no provider is explicitly configured, except during test runs
+    if not provider:
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            if os.getenv("GEMINI_API_KEY"):
+                return GeminiLLMProvider(os.getenv("GEMINI_API_KEY"))
+            if os.getenv("ANTHROPIC_API_KEY"):
+                return AnthropicLLMProvider(os.getenv("ANTHROPIC_API_KEY"))
+            if os.getenv("OPENAI_API_KEY"):
+                return OpenAILLMProvider(os.getenv("OPENAI_API_KEY"))
+            if os.getenv("XAI_API_KEY"):
+                return XAILLMProvider(os.getenv("XAI_API_KEY"))
+        return OfflineHeuristicProvider()
+
+    api_key = api_key or {
+        "openai": os.getenv("OPENAI_API_KEY", settings.OPENAI_API_KEY),
+        "anthropic": os.getenv("ANTHROPIC_API_KEY", settings.ANTHROPIC_API_KEY),
+        "gemini": os.getenv("GEMINI_API_KEY", settings.GEMINI_API_KEY),
+        "xai": os.getenv("XAI_API_KEY", ""),
     }.get(provider, "")
+    
     if provider == "openai_codex":
         return OpenAICodexCLIProvider()
     if provider == "anthropic_claude":
         return AnthropicClaudeCLIProvider()
     if provider == "openai" and api_key:
+        return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
+    if provider == "xai" and api_key:
         return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))
     if provider == "gemini" and api_key:
         return get_llm_client_for_account(provider, api_key, _runtime_provider.get("endpoint", ""), _runtime_provider.get("model", ""))

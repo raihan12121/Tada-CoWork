@@ -22,12 +22,12 @@ async def update_llm_settings(request: Request):
     require_workspace_access(_principal(request), "default")
     payload = await request.json()
     provider = str(payload.get("provider", "")).strip().lower()
-    if provider not in {"openai", "openai_codex", "anthropic", "anthropic_claude", "gemini", "ollama", "lm_studio", "offline_heuristic"}:
+    if provider not in {"openai", "openai_codex", "anthropic", "anthropic_claude", "gemini", "xai", "ollama", "lm_studio", "offline_heuristic"}:
         raise HTTPException(status_code=400, detail="Unsupported provider")
     api_key = str(payload.get("api_key", ""))
     endpoint = str(payload.get("endpoint", ""))
     model = str(payload.get("model", ""))
-    if provider in {"openai", "anthropic", "gemini"} and not api_key:
+    if provider in {"openai", "anthropic", "gemini", "xai"} and not api_key:
         raise HTTPException(status_code=400, detail="An API key is required for this provider")
     if provider in {"ollama", "lm_studio"} and endpoint and not endpoint.startswith(("http://127.0.0.1", "http://localhost", "https://")):
         raise HTTPException(status_code=400, detail="Local-model endpoints must be localhost or HTTPS")

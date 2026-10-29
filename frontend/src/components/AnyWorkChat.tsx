@@ -25,6 +25,8 @@ import { api } from '../services/api';
 import { ApprovalPrompt } from './ApprovalPrompt';
 import { DynamicAvatar } from './DynamicAvatar';
 import { VoiceModeOrb } from './VoiceModeOrb';
+import { ThinkingCard } from './ThinkingCard';
+import { ToolCallCard } from './ToolCallCard';
 
 const DEFAULT_SLASH_SKILLS = [
   { name: 'inbox-triage', desc: 'Scan and categorize priority incoming messages', icon: Zap },
@@ -52,6 +54,7 @@ interface AnyWorkChatProps {
   onOpenRoutinesModal?: () => void;
   onOpenMemoryModal?: () => void;
   onOpenSkillsModal?: () => void;
+  onOpenSettingsModal?: () => void;
 }
 
 export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
@@ -71,7 +74,8 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
   bots,
   onOpenRoutinesModal,
   onOpenMemoryModal,
-  onOpenSkillsModal
+  onOpenSkillsModal,
+  onOpenSettingsModal
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -79,11 +83,16 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [availableSkills, setAvailableSkills] = useState<Array<{ name: string; desc: string; icon?: any }>>(DEFAULT_SLASH_SKILLS);
   const [expandedHandoffs, setExpandedHandoffs] = useState<Record<string, boolean>>({});
+  const [llmConfig, setLlmConfig] = useState<{ provider: string; model?: string; configured: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+
+  useEffect(() => {
+    api.getLLMSettings().then(setLlmConfig).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.listSkills().then((data) => {
@@ -188,11 +197,26 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
               <span className={`w-1.5 h-1.5 rounded-full ${
                 isLoading 
                   ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)] animate-pulse' 
-                  : 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.7)]'
+                  : llmConfig?.configured
+                    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.7)]'
+                    : 'bg-zinc-500'
               }`} />
               <span className="text-[10px] text-zinc-400 font-mono">
-                {isLoading ? 'Executing autonomous task...' : 'Cloud VM · Online & Ready'}
+                {isLoading 
+                  ? 'Executing autonomous task...' 
+                  : llmConfig?.configured
+                    ? `${llmConfig.provider.toUpperCase()} (${llmConfig.model || 'live'}) · Online`
+                    : 'Offline Mode'}
               </span>
+              {!llmConfig?.configured && onOpenSettingsModal && (
+                <button
+                  type="button"
+                  onClick={onOpenSettingsModal}
+                  className="ml-1 text-[9px] font-mono text-cyan-400 hover:text-cyan-300 hover:underline"
+                >
+                  [Connect AI]
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -320,6 +344,34 @@ export const AnyWorkChat: React.FC<AnyWorkChatProps> = ({
           const isUser = evt.event_type === 'narration' && evt.message.startsWith('User:');
           const isHandoff = evt.event_type === 'tool_start' && evt.message.includes('swarm_delegate');
           const isArtifact = evt.event_type === 'artifact_created';
+          const isReasoning = evt.event_type === 'reasoning';
+          const isToolCall = (evt.event_type === 'tool_start' && !isHandoff) || evt.event_type === 'tool_end';
+
+          // 1. Collapsible Thinking Card
+          if (isReasoning) {
+            return (
+              <ThinkingCard
+                key={evt.id || idx}
+                thought={evt.technical_details?.thought || evt.message}
+                narration={evt.technical_details?.thought ? evt.message : undefined}
+                isStreaming={isLoading && idx === events.length - 1}
+              />
+            );
+          }
+
+          // 2. Interactive Tool Call Card
+          if (isToolCall) {
+            return (
+              <ToolCallCard
+                key={evt.id || idx}
+                tool={evt.technical_details?.tool || 'tool'}
+                params={evt.technical_details?.params}
+                result={evt.technical_details?.result}
+                status={evt.event_type === 'tool_start' ? 'running' : 'completed'}
+                message={evt.message}
+              />
+            );
+          }
 
           // Multi-agent speaker resolution (for channels and swarm handoffs)
           const speakerMatch = evt.message.match(/^\[([A-Za-z0-9_\-\s]+)\]:\s*([\s\S]*)/);
