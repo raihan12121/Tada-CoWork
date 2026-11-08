@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # The documented deployment path is `.env` + uvicorn. Load it before the
@@ -27,6 +28,20 @@ class Settings:
     PROJECT_NAME: str = "AnyWork"
     VERSION: str = "1.1.5"
     API_V1_STR: str = "/v1"
+    # Comma-separated list; defaults to the local desktop/web origins. Set
+    # COAGENT_ALLOWED_ORIGINS for hosted deployments instead of editing code.
+    ALLOWED_ORIGINS: list = [
+        origin.strip()
+        for origin in os.getenv(
+            "COAGENT_ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,"
+            "http://127.0.0.1:8000,http://localhost,http://127.0.0.1,"
+            "capacitor://localhost,http://localhost:8080",
+        ).split(",")
+        if origin.strip()
+    ]
+    IDENTITY_LEEWAY_SECONDS: int = int(os.getenv("COAGENT_IDENTITY_LEEWAY_SECONDS", "30"))
+    OIDC_JWKS_TTL_SECONDS: int = int(os.getenv("COAGENT_OIDC_JWKS_TTL_SECONDS", "300"))
     API_AUTH_TOKEN: str = os.getenv("COAGENT_API_AUTH_TOKEN", "")
     ADMIN_TOKEN: str = os.getenv("COAGENT_ADMIN_TOKEN", "")
     IDENTITY_SECRET: str = os.getenv("COAGENT_IDENTITY_SECRET", "")
@@ -41,13 +56,13 @@ class Settings:
     ).lower() == "true"
     DEPLOYMENT_REGION: str = os.getenv("COAGENT_DEPLOYMENT_REGION", "local")
     DEFAULT_RETENTION_DAYS: int = int(os.getenv("COAGENT_RETENTION_DAYS", "30"))
-    
+
     # Storage paths
     BASE_DIR: Path = BASE_DIR
     SANDBOXES_DIR: Path = SANDBOXES_DIR
     DATA_DIR: Path = DATA_DIR
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR.as_posix()}/coagent.db")
-    
+
     # LLM Settings
     DEFAULT_PROVIDER: str = os.getenv("LLM_PROVIDER", "offline_heuristic")  # "anthropic", "openai", "gemini", "offline_heuristic"
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -65,7 +80,7 @@ class Settings:
     SMTP_USERNAME: str = os.getenv("COAGENT_SMTP_USERNAME", "")
     SMTP_PASSWORD: str = os.getenv("COAGENT_SMTP_PASSWORD", "")
     SMTP_FROM_EMAIL: str = os.getenv("COAGENT_SMTP_FROM_EMAIL", "")
-    
+
     # Quotas & Limits
     DEFAULT_MAX_STEPS: int = int(os.getenv("DEFAULT_MAX_STEPS", "30"))
     DEFAULT_MAX_TOOL_CALLS: int = int(os.getenv("DEFAULT_MAX_TOOL_CALLS", "50"))
@@ -74,6 +89,8 @@ class Settings:
     DEFAULT_MAX_DISK_BYTES: int = int(os.getenv("DEFAULT_MAX_DISK_BYTES", "104857600")) # 100MB per session
     DEFAULT_MAX_INPUT_BYTES: int = int(os.getenv("DEFAULT_MAX_INPUT_BYTES", "26214400")) # 25MB per uploaded input
     ESTIMATED_TOOL_CALL_COST_USD: float = float(os.getenv("ESTIMATED_TOOL_CALL_COST_USD", "0.0001"))
+    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("COAGENT_RATE_LIMIT_PER_MINUTE", "600"))
+    TERMINAL_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("COAGENT_TERMINAL_RATE_LIMIT_PER_MINUTE", "120"))
     DEFAULT_MAX_CODE_BYTES: int = int(os.getenv("DEFAULT_MAX_CODE_BYTES", "262144"))
     SANDBOX_BACKEND: str = os.getenv("SANDBOX_BACKEND", "local")
     SANDBOX_NETWORK: str = os.getenv("SANDBOX_NETWORK", "none")
@@ -83,7 +100,7 @@ class Settings:
     SANDBOX_CPU_LIMIT: str = os.getenv("SANDBOX_CPU_LIMIT", "1.0")
     SANDBOX_MEMORY_LIMIT: str = os.getenv("SANDBOX_MEMORY_LIMIT", "512m")
     SANDBOX_PIDS_LIMIT: int = int(os.getenv("SANDBOX_PIDS_LIMIT", "64"))
-    
+
     # Bridge Secret
     BRIDGE_SECRET: str = os.getenv("BRIDGE_SECRET", "dev-only-local-bridge-secret" if APP_ENV == "development" else "")
     BRIDGE_AGENT_URL: str = os.getenv("COAGENT_BRIDGE_AGENT_URL", "")

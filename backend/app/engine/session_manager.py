@@ -1,23 +1,45 @@
 import asyncio
-import uuid
+import contextlib
 import json
 import os
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-from sqlalchemy import select, update, or_, delete
-from app.db.session import AsyncSessionLocal, DBSession, DBExecutionJob, DBPlan, DBStep, DBArtifact, DBApproval, DBActivityEvent, DBProviderAccount
-from app.models.schemas import (
-    SessionModel, SessionCreate, PlanModel, StepBase, ArtifactModel, ApprovalRequest, ActivityFeedEvent
-)
-from app.engine.planner import planner_engine
-from app.engine.executor import ExecutorSession
-from app.memory.long_term_memory import long_term_memory
+from typing import Dict, List, Optional
+
+from sqlalchemy import or_, select, update
+
 from app.core.audit import audit_logger
+from app.core.llm import AccountFailoverLLMProvider, BaseLLMProvider, get_llm_client_for_account
 from app.core.org_policy import org_policy_manager
-from app.sandbox.process_sandbox import sandbox_manager
-from app.core.llm import get_llm_client_for_account, AccountFailoverLLMProvider, BaseLLMProvider
-from app.core.provider_accounts import load_account_secret
 from app.core.plan_tier import plan_tier_manager
+from app.core.provider_accounts import load_account_secret
+from app.db.session import (
+    AsyncSessionLocal,
+    DBActivityEvent,
+    DBApproval,
+    DBArtifact,
+    DBBot,
+    DBChannel,
+    DBExecutionJob,
+    DBPlan,
+    DBProviderAccount,
+    DBSession,
+    DBStep,
+)
+from app.engine.executor import ExecutorSession
+from app.engine.planner import planner_engine
+from app.memory.long_term_memory import long_term_memory
+from app.models.schemas import (
+    ActivityFeedEvent,
+    ApprovalRequest,
+    ArtifactModel,
+    PlanModel,
+    SessionCreate,
+    SessionModel,
+    StepBase,
+)
+from app.sandbox.process_sandbox import sandbox_manager
+
 
 class SessionManager:
     def __init__(self):
@@ -76,10 +98,8 @@ class SessionManager:
 
     def unsubscribe_events(self, session_id: str, q: asyncio.Queue):
         if session_id in self._ws_subscribers:
-            try:
+            with contextlib.suppress(ValueError):
                 self._ws_subscribers[session_id].remove(q)
-            except ValueError:
-                pass
 
     async def broadcast_event(self, event: ActivityFeedEvent):
         queues = list(self._ws_subscribers.get(event.session_id, []))
@@ -98,6 +118,26 @@ class SessionManager:
         await plan_tier_manager.check_quota(task_data.workspace_id)
         session_id = str(uuid.uuid4())
 
+        # Referenced entities must exist; silently dropping an unknown bot id
+        # makes the client believe the session is bound to it.
+        if task_data.bot_id or task_data.channel_id:
+            async with AsyncSessionLocal() as db:
+                if task_data.bot_id:
+                    bot = (await db.execute(
+                        select(DBBot.id).where(DBBot.id == task_data.bot_id, DBBot.workspace_id == task_data.workspace_id)
+                    )).scalar_one_or_none()
+                    if not bot:
+                        raise ValueError(f"Bot not found in this workspace: {task_data.bot_id}")
+                if task_data.channel_id:
+                    channel = (await db.execute(
+                        select(DBChannel.id).where(
+                            DBChannel.id == task_data.channel_id,
+                            DBChannel.workspace_id == task_data.workspace_id,
+                        )
+                    )).scalar_one_or_none()
+                    if not channel:
+                        raise ValueError(f"Channel not found in this workspace: {task_data.channel_id}")
+
         if task_data.provider_account_id:
             async with AsyncSessionLocal() as db:
                 account = (await db.execute(select(DBProviderAccount).where(DBProviderAccount.id == task_data.provider_account_id, DBProviderAccount.workspace_id == task_data.workspace_id))).scalar_one_or_none()
@@ -105,7 +145,7 @@ class SessionManager:
                 raise ValueError("Selected provider account was not found in this workspace")
             if account.status == "quota_exhausted":
                 raise ValueError("Selected provider account is quota exhausted; choose another account")
-        
+
         # Recall relevant long-term memory
         relevant_memories = await long_term_memory.retrieve_relevant_memory(
             query=task_data.task,
@@ -191,10 +231,15 @@ class SessionManager:
             ,granted_domains=task_data.granted_domains
         )
 
-    async def start_execution(self, session_id: str):
+    async def start_execution(self, session_id: str) -> bool:
         session = await self.get_session(session_id)
         if not session or not session.plan:
             raise ValueError("Session or plan not found")
+        if session.status in {"cancelled", "completed"}:
+            raise ValueError(f"Session cannot be started from status '{session.status}'")
+        if session.status == "running" or session_id in self._active_executors:
+            # Already executing; the caller must not report a new start.
+            return False
 
         # Persist execution intent before starting an in-process worker. This
         # makes a crash recoverable and gives competing workers a lease gate.
@@ -228,7 +273,7 @@ class SessionManager:
             )
             await db.commit()
         if not claimed.rowcount:
-            return
+            return False
 
         provider_client = await self._provider_client(session.provider_account_id, session.workspace_id, session.allow_provider_failover)
 
@@ -260,6 +305,7 @@ class SessionManager:
         # Launch runner in background
         task = asyncio.create_task(self._run_executor_task(executor, session.plan, session.task, job_id))
         self._background_tasks[session_id] = task
+        return True
 
     async def _run_executor_task(self, executor: ExecutorSession, plan: PlanModel, task: str, job_id: str):
         try:
@@ -267,8 +313,11 @@ class SessionManager:
             status = "completed" if success else ("cancelled" if executor.is_cancelled else "failed")
         except Exception as e:
             await executor.emit_event("error", f"Fatal execution failure: {str(e)}")
+            # The error event must reach storage even though the run is aborting;
+            # otherwise the UI shows "failed" with no diagnosis.
+            await executor.flush_events()
             status = "failed"
-            
+
         async with AsyncSessionLocal() as db:
             stmt = update(DBSession).where(DBSession.id == executor.session_id).values(
                 status=status,
@@ -305,13 +354,17 @@ class SessionManager:
 
     async def pause_session(self, session_id: str):
         executor = self._active_executors.get(session_id)
-        if executor:
-            executor.pause()
-            async with AsyncSessionLocal() as db:
-                stmt = update(DBSession).where(DBSession.id == session_id).values(status="paused")
-                await db.execute(stmt)
-                await db.commit()
-            await executor.emit_event("narration", "Session paused.")
+        if not executor:
+            session = await self.get_session(session_id)
+            if not session:
+                raise ValueError("Session not found")
+            raise ValueError(f"Session cannot be paused from status '{session.status}'")
+        executor.pause()
+        async with AsyncSessionLocal() as db:
+            stmt = update(DBSession).where(DBSession.id == session_id).values(status="paused")
+            await db.execute(stmt)
+            await db.commit()
+        await executor.emit_event("narration", "Session paused.")
 
     async def resume_session(self, session_id: str):
         executor = self._active_executors.get(session_id)
@@ -327,6 +380,8 @@ class SessionManager:
             session = await self.get_session(session_id)
             if not session or not session.plan:
                 raise ValueError("Session or plan not found")
+            if session.status not in {"paused", "failed"}:
+                raise ValueError(f"Session cannot be resumed from status '{session.status}'")
             await self.start_execution(session_id)
 
     async def cancel_session(self, session_id: str):
@@ -491,6 +546,7 @@ class SessionManager:
     async def list_sessions(
         self,
         limit: int = 20,
+        offset: int = 0,
         bot_id: Optional[str] = None,
         channel_id: Optional[str] = None
     ) -> List[SessionModel]:
@@ -500,7 +556,7 @@ class SessionManager:
                 stmt = stmt.where(DBSession.bot_id == bot_id)
             if channel_id:
                 stmt = stmt.where(DBSession.channel_id == channel_id)
-            stmt = stmt.order_by(DBSession.created_at.desc()).limit(limit)
+            stmt = stmt.order_by(DBSession.created_at.desc()).offset(max(0, offset)).limit(limit)
             res = await db.execute(stmt)
             sessions = res.scalars().all()
             if not sessions:

@@ -1,7 +1,10 @@
-from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field
-from app.tools.base import BaseTool
+from typing import List
+
+from pydantic import BaseModel
+
 from app.models.schemas import RiskLevel
+from app.tools.base import BaseTool
+
 
 class ConnectorDefinition(BaseModel):
     id: str

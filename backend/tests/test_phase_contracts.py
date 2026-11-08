@@ -1,27 +1,27 @@
-from datetime import datetime, timezone
-from pathlib import Path
 import hashlib
 import hmac
 import io
 import json
+import uuid
 import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 import pytest
+from sqlalchemy import select
 
+from app.api.bridge import _bridge_state
 from app.config import settings
-from app.engine.scheduler import scheduler_engine
+from app.core.llm import OfflineHeuristicProvider
+from app.core.org_policy import org_policy_manager
+from app.db.session import AsyncSessionLocal, DBConnectorReview, DBExecutionJob, DBSession
 from app.engine.executor import ExecutorSession
+from app.engine.scheduler import scheduler_engine
+from app.engine.session_manager import session_manager
 from app.main import app
 from app.models.schemas import SessionCreate
-from app.engine.session_manager import session_manager
-from app.core.org_policy import org_policy_manager
-from app.core.llm import OfflineHeuristicProvider
-from app.db.session import AsyncSessionLocal, DBConnectorReview, DBExecutionJob, DBSession
-from app.api.bridge import _bridge_state
 from app.sandbox.process_sandbox import sandbox_manager
-from sqlalchemy import select
-import uuid
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,7 @@ async def test_mcp_cannot_bypass_approval_gate():
 
 @pytest.mark.asyncio
 async def test_organization_connector_block_is_enforced():
-    policy = org_policy_manager.configure("blocked-workspace", connector_blocklist=["web_search"])
+    org_policy_manager.configure("blocked-workspace", connector_blocklist=["web_search"])
     session = await session_manager.create_session(SessionCreate(
         task="Research competitors",
         workspace_id="blocked-workspace",

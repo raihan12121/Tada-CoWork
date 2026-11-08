@@ -10,8 +10,8 @@ import base64
 import hashlib
 import hmac
 import json
-import time
 import threading
+import time
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -20,6 +20,24 @@ from app.config import settings
 
 _jwks_cache: dict[str, Any] = {"expires_at": 0.0, "keys": {}}
 _jwks_lock = threading.Lock()
+
+# PyJWT is the preferred verifier; the dependency-free fallback below keeps the
+# desktop bundle working if cryptography is unavailable in a frozen build.
+_PYJWT: Any = None
+_PYJWT_PROBED = False
+
+
+def _load_pyjwt() -> Any:
+    """Import PyJWT lazily so a missing optional dependency degrades safely."""
+    global _PYJWT, _PYJWT_PROBED
+    if not _PYJWT_PROBED:
+        try:
+            import jwt as _module
+            _PYJWT = _module
+        except Exception:  # pragma: no cover - optional dependency
+            _PYJWT = False
+        _PYJWT_PROBED = True
+    return _PYJWT
 
 
 def _b64(value: bytes) -> str:
@@ -85,7 +103,9 @@ def parse_access_token(token: str) -> Principal:
         raise ValueError("Malformed identity token") from exc
     if not hmac.compare_digest(expected, supplied):
         raise ValueError("Invalid identity token signature")
-    if int(payload.get("exp", 0)) < int(time.time()):
+    leeway = max(0, settings.IDENTITY_LEEWAY_SECONDS)
+    exp = payload.get("exp")
+    if exp is None or int(exp) + leeway < int(time.time()):
         raise ValueError("Identity token expired")
     subject = str(payload.get("sub", "")).strip()
     organization_id = str(payload.get("org_id", "")).strip()
@@ -112,17 +132,21 @@ def _claim_list(payload: dict[str, Any], name: str) -> list[str]:
     return []
 
 
-def _load_oidc_key(kid: str) -> dict[str, Any]:
+def _load_oidc_key(kid: str, force_refresh: bool = False) -> dict[str, Any]:
     now = time.time()
     with _jwks_lock:
-        if now >= float(_jwks_cache.get("expires_at", 0)):
+        cached_keys = _jwks_cache.get("keys", {})
+        stale = now >= float(_jwks_cache.get("expires_at", 0))
+        # An unknown ``kid`` usually means the provider rotated keys; refresh
+        # once instead of rejecting otherwise valid tokens until the TTL ends.
+        if force_refresh or stale or kid not in cached_keys:
             try:
                 with urllib.request.urlopen(settings.OIDC_JWKS_URL, timeout=5) as response:
                     document = json.loads(response.read().decode("utf-8"))
                 keys = {str(key.get("kid")): key for key in document.get("keys", []) if key.get("kid")}
                 if not keys:
                     raise ValueError("OIDC JWKS contains no keyed signing certificates")
-                _jwks_cache.update({"expires_at": now + 300, "keys": keys})
+                _jwks_cache.update({"expires_at": now + settings.OIDC_JWKS_TTL_SECONDS, "keys": keys})
             except Exception as exc:
                 raise ValueError(f"Unable to load OIDC signing keys: {exc}") from exc
         key = _jwks_cache.get("keys", {}).get(kid)
@@ -132,19 +156,89 @@ def _load_oidc_key(kid: str) -> dict[str, Any]:
 
 
 def _verify_rs256(signing_input: bytes, signature: bytes, key: dict[str, Any]) -> bool:
+    """Dependency-free RSASSA-PKCS1-v1_5 verification (fallback path only).
+
+    Used when PyJWT/cryptography is not installed. Enforces the full modulus
+    width and the RFC 8017 minimum padding length so truncated or malformed
+    signatures cannot verify.
+    """
     if key.get("kty") != "RSA" or key.get("alg") not in {None, "RS256"}:
         return False
     try:
         modulus = int.from_bytes(_unb64(str(key["n"])), "big")
         exponent = int.from_bytes(_unb64(str(key["e"])), "big")
+        modulus_bytes = (modulus.bit_length() + 7) // 8
+        if len(signature) != modulus_bytes or exponent < 3 or exponent % 2 == 0:
+            return False
         expected_digest = hashlib.sha256(signing_input).digest()
-        encoded = pow(int.from_bytes(signature, "big"), exponent, modulus).to_bytes((modulus.bit_length() + 7) // 8, "big")
+        encoded = pow(int.from_bytes(signature, "big"), exponent, modulus).to_bytes(modulus_bytes, "big")
         digest_info = bytes.fromhex("3031300d060960864801650304020105000420") + expected_digest
         padding_length = len(encoded) - len(digest_info) - 3
+        if padding_length < 8:
+            return False
         expected = b"\x00\x01" + (b"\xff" * padding_length) + b"\x00" + digest_info
         return hmac.compare_digest(encoded, expected)
     except (KeyError, TypeError, ValueError, OverflowError):
         return False
+
+
+def _decode_rs256(token: str, key: dict[str, Any]) -> dict[str, Any]:
+    """Verify an RS256 JWT and return its claims, raising ``ValueError`` on failure."""
+    leeway = max(0, settings.IDENTITY_LEEWAY_SECONDS)
+    pyjwt = _load_pyjwt()
+    if pyjwt:
+        try:
+            key_object = pyjwt.PyJWK(key, algorithm="RS256").key
+        except Exception as exc:  # malformed JWK
+            raise ValueError("OIDC signing key is unusable") from exc
+        kwargs: dict[str, Any] = {}
+        if settings.OIDC_ISSUER:
+            kwargs["issuer"] = settings.OIDC_ISSUER
+        if settings.OIDC_AUDIENCE:
+            kwargs["audience"] = settings.OIDC_AUDIENCE
+        try:
+            return pyjwt.decode(
+                token,
+                key_object,
+                algorithms=["RS256"],
+                leeway=leeway,
+                options={"require": ["exp"]},
+                **kwargs,
+            )
+        except pyjwt.InvalidSignatureError as exc:
+            raise ValueError("Invalid OIDC token signature") from exc
+        except (pyjwt.ExpiredSignatureError, pyjwt.ImmatureSignatureError) as exc:
+            raise ValueError("OIDC token is expired or not yet valid") from exc
+        except pyjwt.InvalidIssuerError as exc:
+            raise ValueError("OIDC issuer mismatch") from exc
+        except pyjwt.InvalidAudienceError as exc:
+            raise ValueError("OIDC audience mismatch") from exc
+        except pyjwt.InvalidAlgorithmError as exc:
+            raise ValueError("Unsupported OIDC token algorithm") from exc
+        except pyjwt.PyJWTError as exc:
+            raise ValueError(f"Invalid OIDC token: {exc}") from exc
+
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("Malformed OIDC token")
+    try:
+        payload: dict[str, Any] = json.loads(_unb64(parts[1]).decode("utf-8"))
+        signature = _unb64(parts[2])
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Malformed OIDC token") from exc
+    if not _verify_rs256(f"{parts[0]}.{parts[1]}".encode("ascii"), signature, key):
+        raise ValueError("Invalid OIDC token signature")
+    now = int(time.time())
+    exp = payload.get("exp")
+    if exp is None or int(exp) + leeway < now:
+        raise ValueError("OIDC token is expired or not yet valid")
+    if payload.get("nbf") is not None and int(payload["nbf"]) > now + leeway:
+        raise ValueError("OIDC token is expired or not yet valid")
+    if settings.OIDC_ISSUER and payload.get("iss") != settings.OIDC_ISSUER:
+        raise ValueError("OIDC issuer mismatch")
+    if settings.OIDC_AUDIENCE and settings.OIDC_AUDIENCE not in _claim_list(payload, "aud"):
+        raise ValueError("OIDC audience mismatch")
+    return payload
 
 
 def parse_oidc_access_token(token: str) -> Principal:
@@ -155,24 +249,12 @@ def parse_oidc_access_token(token: str) -> Principal:
         raise ValueError("Malformed OIDC token")
     try:
         header = json.loads(_unb64(parts[0]).decode("utf-8"))
-        payload: dict[str, Any] = json.loads(_unb64(parts[1]).decode("utf-8"))
-        signature = _unb64(parts[2])
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("Malformed OIDC token") from exc
     if header.get("alg") != "RS256" or not header.get("kid"):
         raise ValueError("Unsupported OIDC token algorithm")
     key = _load_oidc_key(str(header["kid"]))
-    if not _verify_rs256(f"{parts[0]}.{parts[1]}".encode("ascii"), signature, key):
-        raise ValueError("Invalid OIDC token signature")
-    now = int(time.time())
-    if int(payload.get("exp", 0)) < now or (payload.get("nbf") is not None and int(payload["nbf"]) > now):
-        raise ValueError("OIDC token is expired or not yet valid")
-    if settings.OIDC_ISSUER and payload.get("iss") != settings.OIDC_ISSUER:
-        raise ValueError("OIDC issuer mismatch")
-    if settings.OIDC_AUDIENCE:
-        audiences = _claim_list(payload, "aud")
-        if settings.OIDC_AUDIENCE not in audiences:
-            raise ValueError("OIDC audience mismatch")
+    payload = _decode_rs256(token, key)
     subject = str(payload.get("sub", "")).strip()
     organization_id = str(payload.get("org_id") or payload.get("organization_id") or payload.get("org") or "").strip()
     if not subject or not organization_id:

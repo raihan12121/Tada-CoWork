@@ -1,11 +1,14 @@
-import urllib.parse
 import html
 import re
-from typing import Dict, Any, List
+import urllib.parse
+from typing import Any, Dict, List
+
 import httpx
-from app.tools.base import BaseTool
-from app.core.safety import safety_engine
+
 from app.config import settings
+from app.core.safety import safety_engine
+from app.tools.base import BaseTool
+
 
 class WebSearchTool(BaseTool):
     name = "web_search"

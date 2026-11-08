@@ -1,6 +1,21 @@
+import re
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field, field_validator
+
+MAX_TASK_LENGTH = 20_000
+
+# Control characters and Unicode bidi/zero-width marks are stripped on ingest:
+# they corrupt logs, spoof rendering, and can smuggle directives past scanners.
+_CONTROL_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+)
+
+
+def sanitize_user_text(value: str) -> str:
+    return _CONTROL_CHARS_RE.sub("", value).strip()
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -128,7 +143,7 @@ class ConnectorModel(BaseModel):
     last_used_at: Optional[datetime] = None
 
 class SessionCreate(BaseModel):
-    task: str = Field(..., min_length=1)
+    task: str = Field(..., min_length=1, max_length=MAX_TASK_LENGTH)
     workspace_id: str = "default"
     bot_id: Optional[str] = None
     channel_id: Optional[str] = None
@@ -143,9 +158,10 @@ class SessionCreate(BaseModel):
     @field_validator("task")
     @classmethod
     def validate_task_non_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Task cannot be empty or only whitespace")
-        return v.strip()
+        cleaned = sanitize_user_text(v)
+        if not cleaned:
+            raise ValueError("Task cannot be empty or only whitespace/control characters")
+        return cleaned
 
 class SessionModel(BaseModel):
     id: str
@@ -235,11 +251,19 @@ class McpServerCreate(BaseModel):
     server_url: str = Field(..., min_length=1)
     workspace_id: str = "default"
     transport: str = "http"
+
+    @field_validator("server_url")
+    @classmethod
+    def validate_server_url(cls, value: str) -> str:
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("server_url must start with http:// or https://")
+        return value
     auth_headers: Dict[str, str] = Field(default_factory=dict)
 
 class SwarmSubtask(BaseModel):
     name: str
     subtask_description: str
+    tools_allowed: List[str] = Field(default_factory=list)
     context: Optional[str] = None
     tools_allowed: Optional[List[str]] = None
 

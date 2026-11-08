@@ -1,15 +1,18 @@
-import uuid
 import json
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-from sqlalchemy import select, update, delete
-from app.db.session import AsyncSessionLocal, DBPlan, DBStep, DBProviderAccount
-from app.models.schemas import PlanModel, StepBase, RiskLevel, PlanEditRequest
-from app.core.llm import get_llm_client, BaseLLMProvider
-from app.core.llm import get_llm_client_for_account
-from app.core.provider_accounts import load_account_secret
+from typing import List, Optional
+
+from sqlalchemy import delete, select, update
+
 from app.core.audit import audit_logger
+from app.core.llm import BaseLLMProvider, get_llm_client, get_llm_client_for_account
+from app.core.provider_accounts import load_account_secret
+from app.db.session import AsyncSessionLocal, DBPlan, DBProviderAccount, DBStep
+from app.engine.task_graph import task_graph_engine
+from app.models.schemas import PlanEditRequest, PlanModel, StepBase
 from app.tools.registry import tool_registry
+
 
 class PlannerEngine:
     def __init__(self):
@@ -118,7 +121,7 @@ class PlannerEngine:
         """
         new_version = current_plan.version + 1
         explanation = f"Plan revised: {reason}"
-        
+
         # Mark pending steps or adjust
         updated_steps: List[StepBase] = []
         for s in current_plan.steps:
@@ -178,7 +181,14 @@ class PlannerEngine:
         elif request.action == "remove":
             if not request.step_id:
                 raise ValueError("Removing a step requires step_id")
+            if request.step_id not in {s.id for s in plan.steps}:
+                raise ValueError(f"Step not found in plan: {request.step_id}")
             plan.steps = [s for s in plan.steps if s.id != request.step_id]
+            # Dependents of a removed step would otherwise reference a ghost id
+            # and make the plan unrunnable ("cycle or unresolved dependency").
+            remaining_ids = {s.id for s in plan.steps}
+            for step in plan.steps:
+                step.dependencies = [dep for dep in step.dependencies if dep in remaining_ids]
         elif request.action == "reorder":
             wanted = request.ordered_step_ids
             current = {s.id: s for s in plan.steps}
@@ -190,6 +200,12 @@ class PlannerEngine:
 
         for index, step in enumerate(plan.steps, 1):
             step.step_order = index
+
+        # Reject edits that produce an unrunnable graph before anything is persisted.
+        try:
+            task_graph_engine.compute_execution_tiers(plan.steps)
+        except ValueError as exc:
+            raise ValueError(f"Plan edit would make the plan unrunnable: {exc}") from exc
 
         plan.version += 1
         plan.status = "revised"

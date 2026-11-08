@@ -1,7 +1,9 @@
 import pytest
+
 from app.engine.planner import planner_engine
 from app.engine.session_manager import session_manager
 from app.models.schemas import SessionCreate
+
 
 @pytest.mark.asyncio
 async def test_planner_generation():

@@ -1,12 +1,16 @@
 import json
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.db.session import get_db, DBConnector
-from app.core.identity import Principal
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.core.secret_store import delete_secret, load_secret, save_secret
+from app.db.session import DBConnector, get_db
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -150,10 +154,6 @@ async def list_connectors(db: AsyncSession = Depends(get_db)):
             ))
     return response
 
-from app.config import settings
-from app.core.secret_store import save_secret, load_secret, delete_secret
-from pathlib import Path
-
 CONNECTOR_SECRET_DIR = settings.DATA_DIR / "connectors"
 
 SENSITIVE_KEYS = {
@@ -284,7 +284,7 @@ async def test_connector(
         }
 
     config = load_connector_config(connector_id, db_row)
-    lowered_keys = {k.lower() for k in config.keys()}
+    lowered_keys = {k.lower() for k in config}
     has_creds = any(
         any(sub in k for sub in ("token", "key", "secret", "cred", "pass"))
         for k in lowered_keys

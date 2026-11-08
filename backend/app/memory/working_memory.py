@@ -1,5 +1,6 @@
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 
 class WorkingMemory:
     """
@@ -50,8 +51,8 @@ class WorkingMemory:
         parts = []
         if self.compacted_summary:
             parts.append(self.compacted_summary)
-            
+
         for t in self.history:
             parts.append(f"[{t['role'].upper()}]: {t['content']}")
-            
+
         return "\n".join(parts)

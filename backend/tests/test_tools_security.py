@@ -1,13 +1,16 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from bridge.agent import LocalBridgeAgent
-from app.tools.web_fetch import WebFetchTool, is_domain_granted
+
 from app.tools.bridge_files import BridgeListFilesTool
+from app.tools.web_fetch import WebFetchTool, is_domain_granted
+
 
 @pytest.mark.asyncio
 async def test_web_fetch_ssrf_blocked():
     tool = WebFetchTool()
-    
+
     # Block loopback
     res_loopback = await tool.execute(session_id="test_ssrf", url="http://127.0.0.1:8000/v1/admin/kill_all")
     assert res_loopback["success"] is False
@@ -35,7 +38,7 @@ async def test_web_fetch_ssrf_blocked():
 @pytest.mark.asyncio
 async def test_web_fetch_reports_real_error_on_dead_url():
     tool = WebFetchTool()
-    
+
     # Try an invalid domain or non-existent public URL
     res = await tool.execute(session_id="test_fetch", url="https://this-domain-does-not-exist-xyz-987654321.org")
     assert res["success"] is False

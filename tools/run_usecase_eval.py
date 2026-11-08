@@ -1,13 +1,14 @@
 """Evaluate planner coverage against the documented use-case benchmark."""
+import asyncio
 import json
 import sys
-import asyncio
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.core.llm import get_llm_client
-from app.tools.registry import tool_registry
 from app.core.safety import safety_engine
+from app.tools.registry import tool_registry
 
 
 async def main() -> int:
@@ -45,7 +46,7 @@ async def main() -> int:
             if step.get("tool") == "create_document":
                 reasoned = await provider.reason_step(case["task"], type("Step", (), {
                     "tool": "create_document", "description": step.get("description", ""),
-                    "model_dump": lambda self: step,
+                    "model_dump": lambda self, _step=step: _step,
                 })(), [], sorted(planned))
                 document_type = (reasoned.get("params") or {}).get("document_type")
                 if document_type:

@@ -1,25 +1,26 @@
 import asyncio
-import uuid
-import time
+import contextlib
 import json
+import time
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Callable, Awaitable
-from sqlalchemy import update, select
-from app.db.session import AsyncSessionLocal, DBSession, DBStep, DBToolCall, DBArtifact, DBActivityEvent
-from app.models.schemas import (
-    SessionModel, PlanModel, StepBase, ToolCallRecord, ActivityFeedEvent, ArtifactModel
-)
-from app.core.safety import safety_engine
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+from sqlalchemy import select, update
+
+from app.config import settings
 from app.core.audit import audit_logger
-from app.core.llm import get_llm_client, BaseLLMProvider
-from app.tools.registry import tool_registry
+from app.core.connector_policy import connector_is_allowed
+from app.core.llm import BaseLLMProvider, get_llm_client
+from app.core.org_policy import org_policy_manager
+from app.core.safety import safety_engine
+from app.db.session import AsyncSessionLocal, DBActivityEvent, DBArtifact, DBSession, DBStep, DBToolCall
 from app.engine.approval_gate import approval_gate_manager
 from app.engine.planner import planner_engine
 from app.engine.task_graph import task_graph_engine
 from app.memory.working_memory import WorkingMemory
-from app.config import settings
-from app.core.org_policy import org_policy_manager
-from app.core.connector_policy import connector_is_allowed
+from app.models.schemas import ActivityFeedEvent, PlanModel, StepBase
+from app.tools.registry import tool_registry
 
 EventCallback = Callable[[ActivityFeedEvent], Awaitable[None]]
 
@@ -92,11 +93,9 @@ class ExecutorSession:
             step_id=step_id
         )
         if self.event_callback:
-            try:
+            with contextlib.suppress(Exception):
                 await self.event_callback(event)
-            except Exception:
-                pass
-        
+
         db_item = DBActivityEvent(
             id=event.id,
             session_id=event.session_id,
@@ -214,7 +213,7 @@ class ExecutorSession:
                 # Fan out concurrent sub-agents
                 tier_tasks = [self._execute_single_step(s, plan, task, prior_observations) for s in tier]
                 results = await asyncio.gather(*tier_tasks, return_exceptions=True)
-                for step, result in zip(tier, results):
+                for step, result in zip(tier, results, strict=False):
                     if isinstance(result, Exception) or result is False:
                         if is_non_blocking_failure(step):
                             warning_failures.append(step.description)
@@ -431,7 +430,7 @@ class ExecutorSession:
                 },
                 step_id=step.id
             )
-            
+
             is_takeover = "payment" in task.lower() or "login" in task.lower()
             takeover_url = tool_params.get("url") if is_takeover else None
 
@@ -476,7 +475,7 @@ class ExecutorSession:
         async with self._lock:
             self.tool_calls_count += 1
             self.steps_executed += 1
-            
+
         start_ms = int(time.time() * 1000)
 
         # Audit log before call (architecture.md §4)
@@ -617,7 +616,7 @@ class ExecutorSession:
                 timestamp=datetime.now(timezone.utc)
             )
             db.add(db_call)
-            
+
             session_stmt = update(DBSession).where(DBSession.id == self.session_id).values(
                 tool_calls_count=DBSession.tool_calls_count + 1,
                 total_cost_usd=DBSession.total_cost_usd + settings.ESTIMATED_TOOL_CALL_COST_USD,

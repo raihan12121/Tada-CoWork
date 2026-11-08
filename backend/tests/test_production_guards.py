@@ -1,9 +1,9 @@
-import pytest
 import httpx
+import pytest
 
 from app.config import settings
-from app.sandbox.process_sandbox import SandboxManager, ManagedSandboxSession
 from app.main import lifespan
+from app.sandbox.process_sandbox import ManagedSandboxSession, SandboxManager
 
 
 def test_production_rejects_local_sandbox(monkeypatch):

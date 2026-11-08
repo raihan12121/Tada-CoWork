@@ -1,6 +1,8 @@
-import pytest
 import httpx
+import pytest
+
 from app.main import app
+
 
 @pytest.mark.asyncio
 async def test_memory_crud_workflow():

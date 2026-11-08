@@ -1,4 +1,5 @@
 import sys
+
 if sys.platform == "win32":
     try:
         if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -9,38 +10,41 @@ if sys.platform == "win32":
         pass
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from app.config import settings
-from app.db.session import init_db
-from app.api.sessions import router as sessions_router
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
+
+from app.api.admin import router as admin_router
 from app.api.approvals import router as approvals_router
 from app.api.artifacts import router as artifacts_router
-from app.api.memory import router as memory_router
-from app.api.schedules import router as schedules_router
-from app.api.admin import router as admin_router
-from app.api.bridge import router as bridge_router
-from app.api.mcp import router as mcp_router
-from app.api.settings_api import router as settings_router
-from app.api.provider_accounts import router as provider_accounts_router
-from app.api.skills import router as skills_router
-from app.api.swarm import router as swarm_router
 from app.api.bots import router as bots_router
+from app.api.bridge import router as bridge_router
+from app.api.browser_api import router as browser_router
 from app.api.channels import router as channels_router
 from app.api.connectors import router as connectors_router
-from app.api.browser_api import router as browser_router
-from app.sandbox.browser_service import browser_service
-from app.engine.scheduler import scheduler_engine
-from app.db.session import AsyncSessionLocal, DBOrganization
-from sqlalchemy import select
+from app.api.mcp import router as mcp_router
+from app.api.memory import router as memory_router
+from app.api.provider_accounts import router as provider_accounts_router
+from app.api.schedules import router as schedules_router
+from app.api.sessions import router as sessions_router
+from app.api.settings_api import router as settings_router
+from app.api.skills import router as skills_router
+from app.api.swarm import router as swarm_router
+from app.config import settings
+from app.core.identity import anonymous_principal, identity_verification_configured, parse_identity_token
 from app.core.org_policy import org_policy_manager
-from app.memory.long_term_memory import long_term_memory
+from app.core.tracing import new_trace_id, reset_trace_id, set_trace_id
+from app.db.session import AsyncSessionLocal, DBOrganization, init_db
+from app.engine.scheduler import scheduler_engine
 from app.engine.session_manager import session_manager
 from app.mcp.mcp_manager import mcp_manager
-from app.core.tracing import new_trace_id, set_trace_id, reset_trace_id
-from app.core.identity import anonymous_principal, parse_identity_token, identity_verification_configured
+from app.memory.long_term_memory import long_term_memory
+from app.sandbox.browser_service import browser_service
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -101,14 +105,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://localhost",
-    "http://127.0.0.1"
-]
+ALLOWED_ORIGINS = settings.ALLOWED_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
@@ -189,12 +186,28 @@ async def health_check():
         "provider": settings.DEFAULT_PROVIDER
     }
 
-from fastapi.responses import FileResponse
+
+@app.head("/health")
+async def health_check_head():
+    return Response(status_code=200)
+
+APK_RELATIVE_PATH = Path("frontend") / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+
 
 @app.get("/download/app.apk")
 async def download_apk():
-    apk_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-    if not apk_path.exists():
+    """Serve the Android build when running from source.
+
+    The resolved path is confined to the repository root so a crafted build
+    layout cannot turn this endpoint into an arbitrary-file reader.
+    """
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    apk_path = (repo_root / APK_RELATIVE_PATH).resolve()
+    try:
+        apk_path.relative_to(repo_root)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"detail": "APK is currently building or not yet compiled."})
+    if not apk_path.is_file():
         return JSONResponse(status_code=404, content={"detail": "APK is currently building or not yet compiled."})
     return FileResponse(
         path=str(apk_path),
@@ -204,10 +217,6 @@ async def download_apk():
 
 
 # Mount static frontend dist if available
-from pathlib import Path
-import sys
-from fastapi.staticfiles import StaticFiles
-
 candidates = [
     Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
     Path(getattr(sys, "_MEIPASS", "")) / "frontend" / "dist",

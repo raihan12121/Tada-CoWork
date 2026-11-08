@@ -1,13 +1,14 @@
-import uuid
 import secrets
-import httpx
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
+import httpx
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Header, Request
+
 from app.config import settings
 from app.core.audit import audit_logger
-from app.core.identity import Principal, require_workspace_access, identity_verification_configured
+from app.core.identity import Principal, identity_verification_configured, require_workspace_access
 from app.engine.session_manager import session_manager
 
 router = APIRouter(prefix="/bridge", tags=["bridge"])

@@ -1,4 +1,5 @@
 """Small Windows-user-bound secret store for desktop-only credentials."""
+import contextlib
 import ctypes
 import os
 from ctypes import wintypes
@@ -56,7 +57,5 @@ def load_secret(path: Path) -> bytes | None:
 
 
 def delete_secret(path: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
-    except OSError:
-        pass

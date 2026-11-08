@@ -1,10 +1,10 @@
-import os
 import shutil
 import time
-from pathlib import Path
-from typing import Dict, Any, List
-from app.tools.base import BaseTool
+from typing import Any, Dict
+
 from app.sandbox.process_sandbox import sandbox_manager
+from app.tools.base import BaseTool
+
 
 class ReadFileTool(BaseTool):
     name = "read_file"
@@ -24,12 +24,12 @@ class ReadFileTool(BaseTool):
         rel_path = kwargs.get("path", "")
         sandbox = sandbox_manager.get_or_create(session_id)
         target = sandbox.resolve_path(rel_path)
-        
+
         if not target.exists():
             return {"success": False, "error": f"File not found: {rel_path}"}
         if not target.is_file():
             return {"success": False, "error": f"Path is not a file: {rel_path}"}
-            
+
         try:
             content = target.read_text(encoding="utf-8", errors="replace")
             return {"success": True, "content": content, "size_bytes": len(content)}
@@ -59,7 +59,7 @@ class WriteFileTool(BaseTool):
         previous_size = target.stat().st_size if target.exists() and target.is_file() else 0
         sandbox.ensure_disk_capacity(previous_size + len(content.encode("utf-8")))
         target.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Rule 4.2: Snapshot prior version before overwrite
         snapshot_path = None
         if target.exists():
@@ -68,7 +68,7 @@ class WriteFileTool(BaseTool):
             snapshot = sandbox.versions_dir / f"{safe_name}.{ts}.bak"
             shutil.copy2(target, snapshot)
             snapshot_path = str(snapshot.name)
-            
+
         target.write_text(content, encoding="utf-8")
         return {
             "success": True,
@@ -111,10 +111,10 @@ class ListFilesTool(BaseTool):
         rel_path = kwargs.get("path", ".")
         sandbox = sandbox_manager.get_or_create(session_id)
         target = sandbox.resolve_path(rel_path)
-        
+
         if not target.exists() or not target.is_dir():
             return {"success": False, "error": f"Directory not found: {rel_path}"}
-            
+
         items = []
         for child in target.iterdir():
             if child.name.startswith("."):
@@ -144,15 +144,15 @@ class DeleteFileTool(BaseTool):
         rel_path = kwargs.get("path", "")
         sandbox = sandbox_manager.get_or_create(session_id)
         target = sandbox.resolve_path(rel_path)
-        
+
         if not target.exists():
             return {"success": False, "error": f"File not found: {rel_path}"}
-            
+
         # Rule 4.1: Reversible delete - move to session trash
         ts = int(time.time() * 1000)
         trash_target = sandbox.trash_dir / f"{target.name}.{ts}.deleted"
         shutil.move(str(target), str(trash_target))
-        
+
         return {
             "success": True,
             "message": f"File '{rel_path}' safely moved to session trash.",

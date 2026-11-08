@@ -1,4 +1,4 @@
-# Use Cases — Coagent
+# Use Cases — AnyWork
 
 Grounded in what Claude Cowork and ChatGPT Agent Mode are actually marketed and observed doing (file organization, report drafting from scattered inputs, spreadsheet building from unstructured data, multi-site research, scheduled recurring reviews), plus extensions from the persona set in PRD.md.
 
@@ -65,7 +65,7 @@ Grounded in what Claude Cowork and ChatGPT Agent Mode are actually marketed and 
 
 ## UC-7: Browser-Based Multi-Step Task (Booking/Form Submission Style)
 **Actor:** Any user
-**Trigger:** "Find the cheapest flight to Tokyo under $800 next month and show me the options" (note: **booking itself is out of scope for v1** — see rules.md, payments are always high-risk/gated and Coagent v1 does not auto-purchase).
+**Trigger:** "Find the cheapest flight to Tokyo under $800 next month and show me the options" (note: **booking itself is out of scope for v1** — see rules.md, payments are always high-risk/gated and AnyWork v1 does not auto-purchase).
 **Flow:**
 1. Agent uses browser automation (via local bridge, user's own logged-in browser context if needed) to search multiple sites.
 2. Compares and filters results.

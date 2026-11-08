@@ -1,10 +1,12 @@
 from typing import List
-from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, HTTPException, Request
-from app.models.schemas import ScheduleModel, SessionCreate, SessionModel
+from pydantic import BaseModel, Field
+
+from app.core.identity import Principal, require_workspace_access
 from app.engine.scheduler import scheduler_engine
 from app.engine.session_manager import session_manager
-from app.core.identity import Principal, require_workspace_access
+from app.models.schemas import ScheduleModel, SessionCreate, SessionModel
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -31,16 +33,19 @@ async def create_schedule(request: Request, payload: ScheduleCreatePayload):
         require_workspace_access(principal, payload.workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
-    return await scheduler_engine.create_schedule(
-        workspace_id=payload.workspace_id,
-        title=payload.title,
-        task_template=payload.task_template,
-        cron_expression=payload.cron_expression,
-        enabled_tools=payload.enabled_tools,
-        granted_scopes=payload.granted_scopes,
-        granted_folders=payload.granted_folders,
-        granted_domains=payload.granted_domains,
-    )
+    try:
+        return await scheduler_engine.create_schedule(
+            workspace_id=payload.workspace_id,
+            title=payload.title,
+            task_template=payload.task_template,
+            cron_expression=payload.cron_expression,
+            enabled_tools=payload.enabled_tools,
+            granted_scopes=payload.granted_scopes,
+            granted_folders=payload.granted_folders,
+            granted_domains=payload.granted_domains,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid schedule: {exc}") from exc
 
 @router.post("/{schedule_id}/trigger", response_model=SessionModel)
 async def trigger_schedule_now(request: Request, schedule_id: str):

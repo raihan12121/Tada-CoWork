@@ -1,12 +1,13 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-import uuid
-import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
-from app.db.session import init_db, AsyncSessionLocal, DBMcpServer
-from app.models.schemas import McpServerCreate, SwarmRunRequest, SwarmSubtask
-from app.mcp.mcp_manager import mcp_manager, DynamicMcpTool
+
+from app.db.session import init_db
+from app.mcp.mcp_manager import DynamicMcpTool, mcp_manager
+from app.models.schemas import McpServerCreate
 from app.tools.registry import tool_registry
 from app.tools.swarm_delegate import DelegateSubtaskTool
+
 
 @pytest.mark.asyncio
 async def test_dynamic_mcp_server_lifecycle():

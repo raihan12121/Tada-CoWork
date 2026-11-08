@@ -1,9 +1,10 @@
+
 import pytest
-import json
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+from httpx import ASGITransport, AsyncClient
+
 from app.db.session import AsyncSessionLocal, DBConnector
-from sqlalchemy import select
+from app.main import app
+
 
 @pytest.mark.asyncio
 async def test_connectors_catalog_listing():

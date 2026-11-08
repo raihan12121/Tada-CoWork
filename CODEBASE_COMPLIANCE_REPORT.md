@@ -1,11 +1,11 @@
-# Coagent Codebase Compliance Report
+# AnyWork Codebase Compliance Report
 
 Review date: 2026-09-17
 Scope: repository source, tests, frontend build, PRD/TRD/design/architecture/phases/rules/usecases/Memory documents.
 
 ## Executive verdict
 
-The repository is a substantially implemented local MVP of the planned Coagent experience. Core workflow, safety, connector-policy, memory, scheduling, bridge, and admin paths are now wired into executable code and regression tests; production architecture and external-evidence requirements remain open.
+The repository is a substantially implemented local MVP of the planned AnyWork experience. Core workflow, safety, connector-policy, memory, scheduling, bridge, and admin paths are now wired into executable code and regression tests; production architecture and external-evidence requirements remain open.
 
 Implemented convincingly: task intake and plan generation, configurable hosted/local AI providers, a FastAPI session lifecycle, a ReAct-shaped executor, WebSocket activity streaming, approval gates, reversible delete/version snapshots, document artifact generation, memory CRUD/recall, authenticated session-scoped bridge transport, audit hash chaining, connector scope/review policy, scheduling/recovery/retention, a desktop launcher, and a React UI covering the main planned surfaces.
 

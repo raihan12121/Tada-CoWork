@@ -1,15 +1,17 @@
-import os
-import sys
-import shutil
 import asyncio
-import tempfile
-import time
-import httpx
-from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
-from app.config import settings
-
+import contextlib
+import os
 import re
+import shlex
+import shutil
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import httpx
+
+from app.config import settings
 
 SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
@@ -23,9 +25,9 @@ class SandboxSession:
         try:
             target_dir.relative_to(sandboxes_root)
         except ValueError:
-            raise ValueError(f"Security error: Session path '{target_dir}' traverses outside sandbox root.")
+            raise ValueError(f"Security error: Session path '{target_dir}' traverses outside sandbox root.") from None
         if target_dir == sandboxes_root:
-            raise ValueError(f"Security error: Session path '{target_dir}' traverses outside sandbox root.")
+            raise ValueError(f"Security error: Session path '{target_dir}' traverses outside sandbox root.") from None
 
         self.session_id = session_id
         self.workspace_id = workspace_id
@@ -33,12 +35,12 @@ class SandboxSession:
         self.trash_dir = self.sandbox_dir / ".trash"
         self.versions_dir = self.sandbox_dir / ".versions"
         self.artifacts_dir = self.sandbox_dir / "artifacts"
-        
+
         # Persistent workspace environment (GrokBot persistent workspace model)
         safe_ws = "".join(c for c in workspace_id if c.isalnum() or c in ("-", "_")).strip() or "default"
         self.workspace_dir = (settings.DATA_DIR / "workspaces" / safe_ws).resolve()
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.sandbox_dir.mkdir(parents=True, exist_ok=True)
         self.trash_dir.mkdir(parents=True, exist_ok=True)
         self.versions_dir.mkdir(parents=True, exist_ok=True)
@@ -79,16 +81,16 @@ class SandboxSession:
             try:
                 full_path.relative_to(self.workspace_dir.resolve())
             except ValueError:
-                raise PermissionError(f"Access denied: Path '{relative_path}' attempts to traverse outside workspace boundary.")
+                raise PermissionError(f"Access denied: Path '{relative_path}' attempts to traverse outside workspace boundary.") from None
             return full_path
 
         full_path = (self.sandbox_dir / norm_path).resolve()
-        
+
         # Verify it stays strictly inside sandbox_dir
         try:
             full_path.relative_to(self.sandbox_dir.resolve())
         except ValueError:
-            raise PermissionError(f"Access denied: Path '{relative_path}' attempts to traverse outside sandbox boundary.")
+            raise PermissionError(f"Access denied: Path '{relative_path}' attempts to traverse outside sandbox boundary.") from None
         return full_path
 
     async def execute_code(
@@ -111,7 +113,7 @@ class SandboxSession:
                 "execution_time_ms": 0,
                 "exit_code": -1,
             }
-        
+
         if language == "python":
             script_path = self.sandbox_dir / f"_run_{int(time.time()*1000)}.py"
             self.ensure_disk_capacity(len(code.encode("utf-8")))
@@ -168,7 +170,7 @@ class SandboxSession:
                 stderr=asyncio.subprocess.PIPE,
                 env=env
             )
-            
+
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     process.communicate(),
@@ -176,10 +178,8 @@ class SandboxSession:
                 )
                 exit_code = process.returncode
             except asyncio.TimeoutError:
-                try:
+                with contextlib.suppress(Exception):
                     process.kill()
-                except Exception:
-                    pass
                 return {
                     "success": False,
                     "stdout": "",
@@ -189,10 +189,8 @@ class SandboxSession:
                 }
             finally:
                 if script_path.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         script_path.unlink()
-                    except Exception:
-                        pass
 
             # Cap output to avoid buffer bombs
             max_bytes = settings.DEFAULT_MAX_OUTPUT_BYTES
@@ -208,7 +206,7 @@ class SandboxSession:
                     "execution_time_ms": int((time.time() - start_time) * 1000),
                     "exit_code": -1,
                 }
-            
+
             if len(stdout_bytes) > max_bytes:
                 stdout += "\n...[Output truncated to 1MB limit]..."
 
@@ -243,19 +241,77 @@ class SandboxSession:
         r"\breg\s+(delete|add)\s+hklm",
     ]
 
+    # Terminal execution is a convenience shell for the *sandbox*, not a host
+    # shell. Only these binaries may run, and never with shell metacharacters,
+    # absolute paths, or inline-code flags (which would be an unpoliced RCE).
+    ALLOWED_COMMANDS = {
+        "echo", "dir", "ls", "type", "cat", "cls", "clear", "cd", "pwd", "whoami",
+        "mkdir", "md", "rmdir", "del", "rm", "copy", "cp", "move", "mv", "ren", "rename",
+        "touch", "sort", "tree", "find", "findstr", "grep", "rg", "head", "tail", "wc",
+        "diff", "date", "time", "ping", "python", "python3", "py", "pip", "pytest",
+        "node", "npm", "npx", "pnpm", "git",
+    }
+    # Commands implemented by the Windows shell itself rather than an .exe.
+    WINDOWS_BUILTINS = {
+        "echo", "dir", "type", "cls", "cd", "mkdir", "md", "rmdir", "del", "copy", "move", "ren", "rename",
+    }
+    SHELL_METACHARACTERS = re.compile(r"[&|;<>^`$\n\r!%]")
+    INLINE_CODE_FLAGS = {"-c", "-e", "--eval", "-command", "-encodedcommand", "/c", "-exec"}
+
+    def _command_policy_violation(self, command: str) -> Optional[str]:
+        """Return a human-readable reason when a command is not permitted."""
+        stripped = (command or "").strip()
+        if not stripped:
+            return "empty command"
+        # Allow the common benign redirect to the null device only.
+        normalized = re.sub(r"\s*>\s*(?:nul|/dev/null)\s*$", "", stripped, flags=re.IGNORECASE).strip()
+        if self.SHELL_METACHARACTERS.search(normalized):
+            return "shell metacharacters (pipes, chaining, redirection, variable expansion) are not permitted"
+        try:
+            tokens = shlex.split(normalized)
+        except ValueError:
+            return "unbalanced quotes"
+        if not tokens:
+            return "empty command"
+
+        binary = Path(tokens[0]).name.lower()
+        if binary.endswith(".exe"):
+            binary = binary[:-4]
+        if binary not in self.ALLOWED_COMMANDS:
+            return f"'{tokens[0]}' is not in the allowed command list"
+
+        for token in tokens[1:]:
+            if token in self.INLINE_CODE_FLAGS:
+                return "inline code flags (-c/-e/--eval) are not permitted; write a script file instead"
+            # Absolute, UNC, drive-letter and parent-relative paths would escape
+            # the session sandbox even though cwd is set to it.
+            if token.startswith(("/", "\\")) or re.match(r"^[a-zA-Z]:", token):
+                return f"absolute path '{token}' is outside the sandbox"
+            if ".." in Path(token).parts:
+                return f"parent-relative path '{token}' is outside the sandbox"
+        return None
+
     async def execute_command(
         self,
         command: str,
         timeout_seconds: int = 30
     ) -> Dict[str, Any]:
-        """
-        Executes an arbitrary shell or CLI command inside the sandbox root directory.
-        Captures stdout and stderr securely with bounded execution time and buffer caps.
-        """
+        """Execute a policy-checked command inside the sandbox root directory."""
         start_time = time.time()
         timeout_seconds = max(1, min(int(timeout_seconds), 120))
 
-        # Security check: Block dangerous system commands
+        policy_error = self._command_policy_violation(command)
+        if policy_error:
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": f"Security violation: command blocked by sandbox policy ({policy_error}).",
+                "execution_time_ms": 0,
+                "exit_code": -1,
+                "cwd": str(self.sandbox_dir),
+            }
+
+        # Security check: Block dangerous system commands (defence in depth)
         lowered = command.lower().strip()
         for pattern in self.DANGEROUS_COMMAND_PATTERNS:
             if re.search(pattern, lowered):
@@ -277,10 +333,17 @@ class SandboxSession:
             "TMP": str(self.sandbox_dir),
         }
 
-        if sys.platform == "win32":
-            cmd_args = ["cmd.exe", "/c", command]
+        # Execute without a shell wherever possible; only Windows shell builtins
+        # (echo/dir/type/...) still need cmd.exe, and they are already validated.
+        normalized = re.sub(r"\s*>\s*(?:nul|/dev/null)\s*$", "", command.strip(), flags=re.IGNORECASE).strip()
+        tokens = shlex.split(normalized)
+        binary = Path(tokens[0]).name.lower()
+        if binary.endswith(".exe"):
+            binary = binary[:-4]
+        if sys.platform == "win32" and binary in self.WINDOWS_BUILTINS:
+            cmd_args = ["cmd.exe", "/c", normalized]
         else:
-            cmd_args = ["/bin/sh", "-c", command]
+            cmd_args = tokens
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -487,7 +550,7 @@ class SandboxManager:
         try:
             target.relative_to(root)
         except ValueError:
-            raise ValueError("Invalid artifact archive path")
+            raise ValueError("Invalid artifact archive path") from None
         return target
 
     def finalize(self, session_id: str):

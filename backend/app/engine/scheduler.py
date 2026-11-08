@@ -1,12 +1,27 @@
-import uuid
 import asyncio
+import contextlib
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from sqlalchemy import select, update, delete
-from app.db.session import AsyncSessionLocal, DBSchedule, DBOrganization, DBSession, DBActivityEvent, DBToolCall, DBPlan, DBStep, DBApproval, DBArtifact
+
+from sqlalchemy import delete, select
+
 from app.core.audit import audit_logger
+from app.db.session import (
+    AsyncSessionLocal,
+    DBActivityEvent,
+    DBApproval,
+    DBArtifact,
+    DBOrganization,
+    DBPlan,
+    DBSchedule,
+    DBSession,
+    DBStep,
+    DBToolCall,
+)
 from app.models.schemas import ScheduleModel, SessionCreate
+
 
 class SchedulerEngine:
     def __init__(self):
@@ -27,7 +42,7 @@ class SchedulerEngine:
     ) -> ScheduleModel:
         sched_id = str(uuid.uuid4())
         next_run = self._next_run(cron_expression, datetime.now(timezone.utc))
-        
+
         async with AsyncSessionLocal() as db:
             db_sched = DBSchedule(
                 id=sched_id,
@@ -95,7 +110,7 @@ class SchedulerEngine:
         now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(DBSchedule).where(
-                DBSchedule.is_active == True,
+                DBSchedule.is_active,
                 DBSchedule.next_run_at <= now,
             ))
             due = result.scalars().all()
@@ -176,6 +191,13 @@ class SchedulerEngine:
         months = values(fields[3], 1, 12)
         weekdays = values(fields[4], 0, 7)
         weekday_values = {0 if day == 7 else day for day in weekdays}
+
+        # Reject impossible day/month combinations up front (e.g. Feb 31)
+        # instead of scanning a year of minutes.
+        longest_month_day = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+        if not any(day <= longest_month_day[month] for month in months for day in days):
+            raise ValueError("cron expression matches no valid calendar date (check day-of-month/month)")
+
         candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
         for _ in range(60 * 24 * 366):
             cron_weekday = (candidate.weekday() + 1) % 7
@@ -196,10 +218,8 @@ class SchedulerEngine:
         self._stop.set()
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
     async def _loop(self):

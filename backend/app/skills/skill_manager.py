@@ -1,16 +1,25 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from sqlalchemy import select, delete
+from typing import List, Optional
+
+from sqlalchemy import delete, select
+
 from app.db.session import AsyncSessionLocal, DBSkill
-from app.models.schemas import SkillModel, SkillCreate, SkillRunRequest, SessionModel, SessionCreate, StepBase, PlanModel
 from app.engine.session_manager import session_manager
+from app.models.schemas import (
+    SessionCreate,
+    SessionModel,
+    SkillCreate,
+    SkillModel,
+    SkillRunRequest,
+)
+
 
 class SkillManager:
     async def list_skills(self, workspace_id: str = "default") -> List[SkillModel]:
         async with AsyncSessionLocal() as db:
-            stmt = select(DBSkill).where(DBSkill.workspace_id == workspace_id, DBSkill.is_active == True).order_by(DBSkill.created_at.desc())
+            stmt = select(DBSkill).where(DBSkill.workspace_id == workspace_id, DBSkill.is_active).order_by(DBSkill.created_at.desc())
             res = await db.execute(stmt)
             rows = res.scalars().all()
             return [

@@ -1,12 +1,15 @@
+import contextlib
 import json
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
-from app.db.session import get_db, DBBot
-from app.models.schemas import BotModel, BotCreate, BotUpdate, BotTemplate
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.identity import Principal, require_workspace_access
+from app.db.session import DBBot, get_db
+from app.models.schemas import BotCreate, BotModel, BotTemplate, BotUpdate
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -52,7 +55,7 @@ async def list_bots(
         require_workspace_access(principal, workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
-        
+
     stmt = select(DBBot).where(DBBot.workspace_id == workspace_id).order_by(DBBot.pinned.desc(), DBBot.name.asc())
     result = await db.execute(stmt)
     rows = result.scalars().all()
@@ -71,6 +74,11 @@ async def create_bot(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     bot_id = f"bot_{uuid.uuid4().hex[:10]}"
+    duplicate = (await db.execute(
+        select(DBBot.id).where(DBBot.workspace_id == data.workspace_id, DBBot.name == data.name)
+    )).scalar_one_or_none()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"A bot named '{data.name}' already exists in this workspace")
     row = DBBot(
         id=bot_id,
         workspace_id=data.workspace_id,
@@ -121,7 +129,7 @@ async def update_bot(
         require_workspace_access(principal, row.workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
-    
+
     if data.name is not None:
         row.name = data.name
     if data.avatar is not None:
@@ -161,7 +169,7 @@ async def duplicate_bot(
         require_workspace_access(principal, row.workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
-    
+
     new_id = f"bot_{uuid.uuid4().hex[:10]}"
     dup = DBBot(
         id=new_id,
@@ -214,18 +222,14 @@ async def export_bot_template(
         require_workspace_access(principal, row.workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
-    
+
     tools = []
     memories = []
-    try:
+    with contextlib.suppress(Exception):
         tools = json.loads(row.enabled_tools_json or "[]")
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         memories = json.loads(row.individual_memory_json or "[]")
-    except Exception:
-        pass
-    
+
     return BotTemplate(
         name=row.name,
         avatar=row.avatar,
@@ -271,17 +275,15 @@ async def trigger_bot_webhook(
     row = await db.get(DBBot, bot_id)
     if not row:
         raise HTTPException(status_code=404, detail="Bot not found")
-    
+
     from app.engine.session_manager import session_manager
     from app.models.schemas import SessionCreate
-    
+
     task_desc = f"[Webhook Trigger Received] Event Payload:\n{json.dumps(payload, indent=2)}\n\nPlease process this event autonomously."
     tools = []
-    try:
+    with contextlib.suppress(Exception):
         tools = json.loads(row.enabled_tools_json or "[]")
-    except Exception:
-        pass
-    
+
     session = await session_manager.create_session(SessionCreate(
         task=task_desc,
         workspace_id=row.workspace_id,
@@ -299,7 +301,7 @@ async def get_bot_routines(
     row = await db.get(DBBot, bot_id)
     if not row:
         raise HTTPException(status_code=404, detail="Bot not found")
-    
+
     # Return available bot routine templates (clean state, no fake demo runs)
     routines = [
         {

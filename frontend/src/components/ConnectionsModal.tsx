@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
@@ -18,6 +19,7 @@ import {
 import type { Bot } from '../types';
 import { api } from '../services/api';
 
+import { useModalA11y } from '../hooks/useModalA11y';
 export interface Connector {
   id: string;
   name: string;
@@ -119,6 +121,8 @@ const DEFAULT_CONNECTORS: Connector[] = [
 ];
 
 export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onClose, bots }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, isOpen, onClose);
   const [connectors, setConnectors] = useState<Connector[]>(DEFAULT_CONNECTORS);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -205,7 +209,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Connections and plugins" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
       <div className="bg-[#0c0c10] border border-white/[0.12] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-[0_32px_96px_rgba(0,0,0,0.95)] overflow-hidden">
         {/* Modal Header */}
         <div className="p-5 border-b border-white/[0.08] flex items-center justify-between bg-black/40">
@@ -221,7 +225,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
             </div>
           </div>
           <button
-            onClick={onClose}
+            aria-label="Close dialog" onClick={onClose}
             className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-white/[0.06] transition"
           >
             <X className="w-4 h-4" />

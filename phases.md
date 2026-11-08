@@ -1,4 +1,4 @@
-# Phases — Delivery Plan for Coagent
+# Phases — Delivery Plan for AnyWork
 
 A staged plan that de-risks the hardest problems (sandboxing, approval gates, local bridge) early, rather than building UI polish first.
 
@@ -75,7 +75,7 @@ A staged plan that de-risks the hardest problems (sandboxing, approval gates, lo
 - Plugin/connector marketplace: submission, review, versioning, scope-change re-approval flow.
 - Data residency/retention configuration per org.
 - Full audit export.
-- **Exit criteria:** an org admin can deploy Coagent to a team with a defined permission policy, monitor usage/spend, and pull a complete audit trail for any session.
+- **Exit criteria:** an org admin can deploy AnyWork to a team with a defined permission policy, monitor usage/spend, and pull a complete audit trail for any session.
 
 ## Phase 8 — Hardening & GA (Weeks 25–30)
 **Goal:** Production readiness.

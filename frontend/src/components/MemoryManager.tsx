@@ -65,7 +65,7 @@ export const MemoryManager: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'coagent-memory.json';
+    anchor.download = 'anywork-memory.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -253,7 +253,7 @@ export const MemoryManager: React.FC = () => {
                 <textarea
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="What should Coagent remember? (e.g. 'I prefer spreadsheets with formula totals and dark headers')"
+                  placeholder="What should AnyWork remember? (e.g. 'I prefer spreadsheets with formula totals and dark headers')"
                   rows={3}
                   className="w-full bg-[#16161b] border border-white/[0.1] rounded-lg p-2 text-xs text-white resize-none focus:outline-none"
                   required

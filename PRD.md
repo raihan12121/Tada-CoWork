@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-## Project Codename: **Coagent** — A Cowork-style Autonomous Work Agent
+## Project Codename: **AnyWork** — A Cowork-style Autonomous Work Agent
 
 Version 1.0 | Last updated: 2026-09-03
 
@@ -43,7 +43,7 @@ Knowledge workers spend large amounts of time on multi-step busywork that requir
 
 ## 3. Vision
 
-Build **Coagent**: a general-purpose, sandboxed AI work agent that a user can delegate real, multi-step knowledge-work tasks to — across local files, documents, spreadsheets, browser-based research, and connected SaaS tools — with full visibility, steerability, and safety guarantees, without requiring the user to write code.
+Build **AnyWork**: a general-purpose, sandboxed AI work agent that a user can delegate real, multi-step knowledge-work tasks to — across local files, documents, spreadsheets, browser-based research, and connected SaaS tools — with full visibility, steerability, and safety guarantees, without requiring the user to write code.
 
 ## 4. Goals / Non-Goals
 
@@ -60,8 +60,8 @@ Build **Coagent**: a general-purpose, sandboxed AI work agent that a user can de
 
 ### Non-Goals (v1)
 - Fully unsupervised, always-on background operation with no human checkpoints (explicitly rejected as a safety anti-pattern based on research above).
-- Replacing a dedicated coding agent (Claude Code / Codex-style) — Coagent targets knowledge work, not primary software engineering, though it can run code as a means to an end.
-- Building our own foundation model. Coagent is a harness/orchestration layer over a third-party or self-hosted LLM API.
+- Replacing a dedicated coding agent (Claude Code / Codex-style) — AnyWork targets knowledge work, not primary software engineering, though it can run code as a means to an end.
+- Building our own foundation model. AnyWork is a harness/orchestration layer over a third-party or self-hosted LLM API.
 - Consumer social/commerce automation (auto-purchasing, auto-posting) in v1 — gated behind explicit opt-in connectors later.
 
 ## 5. Target Users & Personas

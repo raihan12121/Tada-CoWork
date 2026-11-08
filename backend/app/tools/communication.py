@@ -1,9 +1,11 @@
 import asyncio
 import smtplib
 from email.message import EmailMessage
-from typing import Dict, Any
-from app.tools.base import BaseTool
+from typing import Any, Dict
+
 from app.config import settings
+from app.tools.base import BaseTool
+
 
 class SendEmailTool(BaseTool):
     name = "send_email"
@@ -25,7 +27,7 @@ class SendEmailTool(BaseTool):
         recipient = kwargs.get("recipient", "")
         subject = kwargs.get("subject", "")
         body = kwargs.get("body", "")
-        
+
         if settings.DELIVERY_MODE != "live":
             return {
                 "success": True,
@@ -72,7 +74,7 @@ class SendSlackMessageTool(BaseTool):
     async def execute(self, session_id: str, **kwargs) -> Dict[str, Any]:
         channel = kwargs.get("channel", "")
         message = kwargs.get("message", "")
-        
+
         if settings.DELIVERY_MODE != "live":
             return {
                 "success": True,

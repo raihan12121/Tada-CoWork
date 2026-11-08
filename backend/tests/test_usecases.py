@@ -1,9 +1,12 @@
-import pytest
 import asyncio
-from app.engine.session_manager import session_manager
+
+import pytest
+
 from app.engine.approval_gate import approval_gate_manager
+from app.engine.session_manager import session_manager
 from app.memory.long_term_memory import long_term_memory
 from app.models.schemas import SessionCreate
+
 
 @pytest.mark.asyncio
 async def test_uc1_organize_messy_folder():
@@ -13,11 +16,11 @@ async def test_uc1_organize_messy_folder():
     ))
     assert session.plan is not None
     assert any("inventory" in s.description.lower() or "scan" in s.description.lower() for s in session.plan.steps)
-    
+
     # Pre-approve medium risk so reorganization executes autonomously
     approval_gate_manager.pre_approve_class(session.id, "all_medium")
     await session_manager.start_execution(session.id)
-    
+
     for _ in range(30):
         await asyncio.sleep(0.3)
         s = await session_manager.get_session(session.id)
@@ -166,7 +169,7 @@ async def test_uc7_browser_automation_takeover_mode():
     assert pending is not None
     assert pending.takeover_mode is True
     assert pending.takeover_url == "https://airline.com/checkout"
-    
+
     # Resolve
     await approval_gate_manager.resolve_approval(pending.id, "approved")
     approved, _ = await approval_task

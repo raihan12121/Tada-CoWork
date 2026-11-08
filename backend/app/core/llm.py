@@ -1,13 +1,14 @@
-import os
-import json
-import uuid
 import asyncio
+import json
+import os
 import shutil
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 import httpx
+
 from app.config import settings
-from app.models.schemas import StepBase, RiskLevel
-from app.core.secret_store import save_secret, load_secret, delete_secret
+from app.core.secret_store import delete_secret, load_secret, save_secret
+from app.models.schemas import StepBase
 
 
 def annotate_memory_context(plan: Dict[str, Any], memory_context: str) -> Dict[str, Any]:
@@ -39,17 +40,6 @@ class AccountFailoverLLMProvider(BaseLLMProvider):
         for client in self.clients:
             try:
                 return await client.generate_plan(task, memory_context)
-            except Exception as exc:
-                last = exc
-                if not self._is_quota_error(exc):
-                    raise
-        raise RuntimeError(f"All configured provider accounts are quota-limited: {last}")
-
-    async def reason_step(self, task: str, step: StepBase, prior_observations: List[Dict[str, Any]], tools_available: List[str]) -> Dict[str, Any]:
-        last: Optional[Exception] = None
-        for client in self.clients:
-            try:
-                return await client.reason_step(task, step, prior_observations, tools_available)
             except Exception as exc:
                 last = exc
                 if not self._is_quota_error(exc):
@@ -374,7 +364,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
     """
     def generate_plan_sync(self, task: str, memory_context: str = "") -> Dict[str, Any]:
         task_lower = task.lower()
-        
+
         # UC-1: Organize files
         if "organize" in task_lower or "downloads" in task_lower or "sort" in task_lower:
             inventory_tool = "bridge_list_files" if settings.BRIDGE_AGENT_URL else "list_files"
@@ -388,7 +378,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
                     {"description": "Generate folder organization summary report", "tool": "create_document", "risk_level": "low", "dependencies": ["step-3"]}
                 ]
             }
-            
+
         # UC-2: Expense Spreadsheet
         if "spreadsheet" in task_lower or "expense" in task_lower or "receipt" in task_lower or "xlsx" in task_lower or "csv" in task_lower:
             return {
@@ -522,10 +512,10 @@ class OfflineHeuristicProvider(BaseLLMProvider):
     ) -> Dict[str, Any]:
         tool = step.tool
         desc = step.description.lower()
-        
+
         thought = f"Executing step '{step.description}'. Using tool '{tool}' to fulfill this objective."
         narration = f"Working on: {step.description}..."
-        
+
         # Tool parameter heuristics
         params: Dict[str, Any] = {}
         if tool == "execute_code":
@@ -546,7 +536,7 @@ class OfflineHeuristicProvider(BaseLLMProvider):
                 doc_type = "pptx"
             elif "docx" in task.lower() or "report" in task.lower():
                 doc_type = "docx"
-                
+
             params = {
                 "title": f"{task[:40]} Deliverable",
                 "document_type": doc_type,
@@ -701,7 +691,7 @@ def get_llm_client_for_account(provider: str, api_key: str = "", endpoint: str =
 def get_llm_client() -> BaseLLMProvider:
     provider = _runtime_provider.get("provider")
     api_key = _runtime_provider.get("api_key", "")
-    
+
     if provider == "offline_heuristic":
         return OfflineHeuristicProvider()
 
@@ -724,7 +714,7 @@ def get_llm_client() -> BaseLLMProvider:
         "gemini": os.getenv("GEMINI_API_KEY", settings.GEMINI_API_KEY),
         "xai": os.getenv("XAI_API_KEY", ""),
     }.get(provider, "")
-    
+
     if provider == "openai_codex":
         return OpenAICodexCLIProvider()
     if provider == "anthropic_claude":

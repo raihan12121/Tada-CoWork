@@ -1,11 +1,14 @@
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
+
 from sqlalchemy import select, update
+
+from app.core.audit import audit_logger
 from app.db.session import AsyncSessionLocal, DBApproval
 from app.models.schemas import ApprovalRequest, ApprovalResponse, RiskLevel
-from app.core.audit import audit_logger
+
 
 class ApprovalGateManager:
     def __init__(self):
@@ -50,7 +53,7 @@ class ApprovalGateManager:
             prior = existing.scalars().first()
             if prior:
                 approval_id = prior.id
-        approval_req = ApprovalRequest(
+        ApprovalRequest(
             id=approval_id,
             session_id=session_id,
             step_id=step_id,
@@ -120,14 +123,13 @@ class ApprovalGateManager:
             # Wait for human resolution (indefinitely as per design.md §6 - no auto-approve on timeout)
             await event.wait()
             response = self._pending_responses.pop(approval_id, None)
-            
+
             is_approved = response.decision == "approved" if response else False
             feedback = response.user_feedback if response else None
 
             # Handle pre-approval of medium risk class if requested
-            if is_approved and response and response.always_allow_category:
-                if risk_level == "medium":
-                    self.pre_approve_class(session_id, action_type)
+            if is_approved and response and response.always_allow_category and risk_level == "medium":
+                self.pre_approve_class(session_id, action_type)
 
             return is_approved, feedback
 
@@ -217,5 +219,4 @@ class ApprovalGateManager:
                 user_feedback=item.user_feedback
             )
 
-from typing import Tuple
 approval_gate_manager = ApprovalGateManager()

@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
@@ -13,6 +14,7 @@ import {
 import type { Bot } from '../types';
 import { api, getBackendBaseUrl } from '../services/api';
 
+import { useModalA11y } from '../hooks/useModalA11y';
 interface Routine {
   id: string;
   bot_id: string;
@@ -41,6 +43,8 @@ export const RoutinesModal: React.FC<RoutinesModalProps> = ({
   initialBotId,
   onSessionTriggered
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, isOpen, onClose);
   const [selectedBotId, setSelectedBotId] = useState<string>(initialBotId || 'all');
   const [activeTab, setActiveTab] = useState<'routines' | 'webhooks' | 'history'>('routines');
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -191,7 +195,7 @@ export const RoutinesModal: React.FC<RoutinesModalProps> = ({
   const backendBase = getBackendBaseUrl() || 'http://localhost:8000';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Routines and cadence" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
       <div className="bg-[#0c0c10] border border-white/[0.12] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-[0_32px_96px_rgba(0,0,0,0.95)] overflow-hidden">
         {/* Modal Header */}
         <div className="p-5 border-b border-white/[0.08] flex items-center justify-between bg-black/40">
@@ -207,7 +211,7 @@ export const RoutinesModal: React.FC<RoutinesModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            aria-label="Close dialog" onClick={onClose}
             className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-white/[0.06] transition"
           >
             <X className="w-4 h-4" />

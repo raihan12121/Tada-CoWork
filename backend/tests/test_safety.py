@@ -1,5 +1,5 @@
-import pytest
 from app.core.safety import safety_engine
+
 
 def test_risk_classification():
     # Low risk

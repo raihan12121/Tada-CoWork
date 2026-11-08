@@ -1,9 +1,12 @@
 import json
 import uuid
-from typing import Dict, Any
-from app.connectors.base import BaseConnector
-from app.config import settings
+from typing import Any, Dict
+
 import httpx
+
+from app.config import settings
+from app.connectors.base import BaseConnector
+
 
 class GoogleDriveConnector(BaseConnector):
     name = "google_drive"

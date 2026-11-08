@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, Request
-import httpx
 
 from app.core.identity import Principal, require_workspace_access
 from app.core.llm import configure_runtime_provider, current_provider_config, get_llm_client

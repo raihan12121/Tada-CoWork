@@ -1,8 +1,11 @@
-import pytest
 import asyncio
-from app.engine.session_manager import session_manager
+
+import pytest
+
 from app.engine.approval_gate import approval_gate_manager
+from app.engine.session_manager import session_manager
 from app.models.schemas import SessionCreate
+
 
 @pytest.mark.asyncio
 async def test_end_to_end_autonomous_execution():
@@ -10,7 +13,7 @@ async def test_end_to_end_autonomous_execution():
         task="Research top AI cowork tools and create a summary markdown report"
     ))
     session_id = session.id
-    
+
     # Pre-approve medium risk so create_document runs autonomously
     approval_gate_manager.pre_approve_class(session_id, "all_medium")
 
@@ -36,7 +39,7 @@ async def test_executor_approval_gate_blocking():
         task="Compile support tickets into a digest and send weekly email to team"
     ))
     session_id = session.id
-    
+
     # Pre-approve medium for creation steps, but high-risk send_email MUST block!
     approval_gate_manager.pre_approve_class(session_id, "all_medium")
 

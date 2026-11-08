@@ -1,12 +1,14 @@
 import json
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
-from app.db.session import get_db, DBChannel
-from app.models.schemas import ChannelModel, ChannelCreate
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.identity import Principal, require_workspace_access
+from app.db.session import DBBot, DBChannel, get_db
+from app.models.schemas import ChannelCreate, ChannelModel
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -58,6 +60,13 @@ async def create_channel(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     channel_id = f"channel_{uuid.uuid4().hex[:10]}"
+    if data.bot_ids:
+        known = set((await db.execute(
+            select(DBBot.id).where(DBBot.workspace_id == data.workspace_id, DBBot.id.in_(data.bot_ids))
+        )).scalars().all())
+        unknown = [bot_id for bot_id in data.bot_ids if bot_id not in known]
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"Unknown bot id(s) for this workspace: {', '.join(unknown)}")
     row = DBChannel(
         id=channel_id,
         workspace_id=data.workspace_id,

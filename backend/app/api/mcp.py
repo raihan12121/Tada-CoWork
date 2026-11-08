@@ -10,21 +10,22 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import update
 
-from app.engine.session_manager import session_manager
-from app.tools.registry import tool_registry
-from app.core.audit import audit_logger
-from app.core.safety import safety_engine
-from app.core.org_policy import org_policy_manager
-from app.db.session import AsyncSessionLocal, DBToolCall, DBSession
 from app.config import settings
+from app.core.audit import audit_logger
 from app.core.connector_policy import connector_is_allowed
 from app.core.identity import Principal, require_workspace_access
+from app.core.org_policy import org_policy_manager
+from app.core.safety import safety_engine
+from app.db.session import AsyncSessionLocal, DBSession, DBToolCall
+from app.engine.session_manager import session_manager
 from app.mcp.mcp_manager import mcp_manager
-from app.models.schemas import McpServerModel, McpServerCreate
+from app.models.schemas import McpServerCreate, McpServerModel
+from app.tools.registry import tool_registry
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 

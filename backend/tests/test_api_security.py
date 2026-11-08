@@ -1,8 +1,10 @@
-import pytest
 import httpx
-from app.main import app
+import pytest
+
 from app.config import settings
+from app.main import app
 from app.sandbox.process_sandbox import SandboxSession
+
 
 @pytest.mark.asyncio
 async def test_admin_kill_all_requires_authorization():

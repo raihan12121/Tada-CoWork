@@ -4,7 +4,12 @@ import httpx
 import pytest
 
 from app.config import settings
-from app.core.identity import issue_access_token, parse_access_token, parse_identity_token, identity_verification_configured
+from app.core.identity import (
+    identity_verification_configured,
+    issue_access_token,
+    parse_access_token,
+    parse_identity_token,
+)
 from app.main import app
 
 

@@ -2,11 +2,12 @@
 import json
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from app.config import settings
+from app.core.identity import issue_access_token, parse_access_token
 from app.core.safety import safety_engine
 from app.tools.web_fetch import is_domain_granted
-from app.core.identity import issue_access_token, parse_access_token
-from app.config import settings
 
 
 def main() -> int:

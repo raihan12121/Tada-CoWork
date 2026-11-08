@@ -1,8 +1,9 @@
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional
-from app.tools.base import BaseTool
+from typing import Any, Dict, List, Optional
+
 from app.models.schemas import SessionCreate
+from app.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class DelegateSubtaskTool(BaseTool):
         **kwargs
     ) -> Dict[str, Any]:
         from app.engine.session_manager import session_manager
-        
+
         parent = await session_manager.get_session(session_id)
         if not parent:
             return {"success": False, "error": f"Parent session {session_id} not found"}
@@ -69,7 +70,9 @@ class DelegateSubtaskTool(BaseTool):
             worker_session = await session_manager.create_session(child_create)
 
             # Start worker execution
-            await session_manager.start_session(worker_session.id)
+            started = await session_manager.start_execution(worker_session.id)
+            if not started:
+                return {"success": False, "error": "Worker session could not be started", "worker_session_id": worker_session.id}
 
             # Wait for worker completion with a reasonable deadline (e.g. 45 seconds for sub-task)
             deadline = 45

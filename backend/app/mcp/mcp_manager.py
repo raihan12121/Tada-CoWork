@@ -1,15 +1,15 @@
-import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
 import httpx
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 
 from app.db.session import AsyncSessionLocal, DBMcpServer
-from app.models.schemas import McpServerModel, McpServerCreate, RiskLevel
-from app.tools.base import BaseTool, ToolSchema
+from app.models.schemas import McpServerCreate, McpServerModel, RiskLevel
+from app.tools.base import BaseTool
 from app.tools.registry import tool_registry
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,7 @@ class McpManager:
         server_id = str(uuid.uuid4())
         # Discover tools
         discovered = await self.discover_tools(payload.server_url, payload.auth_headers)
-        
+
         async with AsyncSessionLocal() as db:
             record = DBMcpServer(
                 id=server_id,
@@ -201,10 +201,10 @@ class McpManager:
             record = (await db.execute(select(DBMcpServer).where(DBMcpServer.id == server_id))).scalar_one_or_none()
             if not record:
                 return None
-            
+
             auth_headers = json.loads(record.auth_header_json or "{}")
             discovered = await self.discover_tools(record.server_url, auth_headers)
-            
+
             # Unregister previous
             for old_name in self._server_tools.get(server_id, []):
                 tool_registry.unregister_tool(old_name)

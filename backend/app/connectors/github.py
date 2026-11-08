@@ -1,7 +1,10 @@
-from typing import Dict, Any
-from app.connectors.base import BaseConnector
-from app.config import settings
+from typing import Any, Dict
+
 import httpx
+
+from app.config import settings
+from app.connectors.base import BaseConnector
+
 
 class GitHubConnector(BaseConnector):
     name = "github"
@@ -28,7 +31,7 @@ class GitHubConnector(BaseConnector):
     async def execute(self, session_id: str, **kwargs) -> Dict[str, Any]:
         action = kwargs.get("action", "list_issues")
         repo = kwargs.get("repo", "org/repo")
-        
+
         if not settings.GITHUB_TOKEN:
             return {"success": False, "connector": "github", "error": "GitHub token is not configured."}
         headers = {"Authorization": f"Bearer {settings.GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}

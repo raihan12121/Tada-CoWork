@@ -1,6 +1,8 @@
 import pytest
-from app.memory.working_memory import WorkingMemory
+
 from app.memory.long_term_memory import long_term_memory
+from app.memory.working_memory import WorkingMemory
+
 
 def test_working_memory_compaction():
     wm = WorkingMemory(session_id="test_wm", max_active_turns=3)

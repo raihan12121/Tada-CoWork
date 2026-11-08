@@ -1,7 +1,9 @@
+import { useRef } from 'react';
 import React, { useState } from 'react';
 import { X, Save, Copy, Trash2, Share2, Brain } from 'lucide-react';
 import type { Bot, BotCreate, BotUpdate } from '../types';
 
+import { useModalA11y } from '../hooks/useModalA11y';
 interface BotModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -24,6 +26,8 @@ export const BotModal: React.FC<BotModalProps> = ({
   onDelete,
   onExportTemplate
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, isOpen, onClose);
   const [name, setName] = useState(bot?.name || '');
   const [avatar, setAvatar] = useState(bot?.avatar || '🤖');
   const [roleTag, setRoleTag] = useState(bot?.role_tag || '');
@@ -81,7 +85,7 @@ export const BotModal: React.FC<BotModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Bot settings" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xl flex items-center justify-center p-4 select-none animate-springEnter">
       <div className="bg-[#0c0c10] border border-white/[0.12] rounded-2xl w-full max-w-lg shadow-[0_32px_96px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-black/40">
@@ -96,7 +100,7 @@ export const BotModal: React.FC<BotModalProps> = ({
               <p className="text-[11px] text-zinc-400 mt-0.5">Configure persona, skills, and memory.</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] transition">
+          <button aria-label="Close dialog" onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] transition">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -269,7 +273,7 @@ export const BotModal: React.FC<BotModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                aria-label="Close dialog" onClick={onClose}
                 className="px-3.5 py-1.5 text-xs text-zinc-400 hover:text-white rounded-xl transition"
               >
                 Cancel

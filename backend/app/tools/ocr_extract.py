@@ -1,13 +1,13 @@
+import contextlib
 import re
-import os
-import json
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
+
 from PIL import Image
 
-from app.tools.base import BaseTool
 from app.sandbox.process_sandbox import sandbox_manager
+from app.tools.base import BaseTool
 
 COMMON_VENDORS = {
     "starbucks": ("Starbucks Coffee", "Meals & Entertainment"),
@@ -52,7 +52,7 @@ class OCRExtractTool(BaseTool):
     def _parse_receipt_text(self, text: str, filename: str = "") -> Dict[str, Any]:
         """Extract structured fields and calculate parsing confidence."""
         lower_text = (text + " " + filename).lower()
-        
+
         # 1. Vendor & Category detection
         vendor = "Unknown Vendor"
         category = "Miscellaneous"
@@ -87,10 +87,8 @@ class OCRExtractTool(BaseTool):
         # Match currency amounts like $45.99 or Total: 45.99
         total_match = re.search(r"(?:total|amount due|balance due|grand total)[\s:]*[\$€£]?\s*(\d+[\.,]\d{2})", text, re.IGNORECASE)
         if total_match:
-            try:
+            with contextlib.suppress(ValueError):
                 amount = float(total_match.group(1).replace(",", "."))
-            except ValueError:
-                pass
         else:
             amounts = re.findall(r"[\$€£]?\s*(\d+\.\d{2})", text)
             if amounts:
@@ -102,10 +100,8 @@ class OCRExtractTool(BaseTool):
 
         tax_match = re.search(r"(?:tax|vat|gst)[\s:]*[\$€£]?\s*(\d+[\.,]\d{2})", text, re.IGNORECASE)
         if tax_match:
-            try:
+            with contextlib.suppress(ValueError):
                 tax = float(tax_match.group(1).replace(",", "."))
-            except ValueError:
-                pass
 
         # 4. Confidence scoring
         confidence = 0.5

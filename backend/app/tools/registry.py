@@ -1,19 +1,21 @@
-from typing import Dict, Any, List, Optional
-from app.tools.base import BaseTool
-from app.tools.code_exec import ExecuteCodeTool
-from app.tools.file_ops import ReadFileTool, WriteFileTool, CreateFileTool, ListFilesTool, DeleteFileTool, MoveFileTool
-from app.tools.doc_gen import CreateDocumentTool
-from app.tools.web_search import WebSearchTool
-from app.tools.web_fetch import WebFetchTool
-from app.tools.communication import SendEmailTool, SendSlackMessageTool
-from app.tools.browser import BrowserAutomationTool
-from app.tools.bridge_files import BridgeListFilesTool, BridgeReadFileTool, BridgeMoveFileTool
-from app.connectors.google_drive import GoogleDriveConnector
-from app.connectors.github import GitHubConnector
-from app.connectors.slack import SlackConnector, WebhookConnector
+from typing import Any, Dict, List, Optional
+
 from app.connectors.email import GmailConnector, OutlookConnector
+from app.connectors.github import GitHubConnector
+from app.connectors.google_drive import GoogleDriveConnector
+from app.connectors.slack import SlackConnector, WebhookConnector
+from app.tools.base import BaseTool
+from app.tools.bridge_files import BridgeListFilesTool, BridgeMoveFileTool, BridgeReadFileTool
+from app.tools.browser import BrowserAutomationTool
+from app.tools.code_exec import ExecuteCodeTool
+from app.tools.communication import SendEmailTool, SendSlackMessageTool
+from app.tools.doc_gen import CreateDocumentTool
+from app.tools.file_ops import CreateFileTool, DeleteFileTool, ListFilesTool, MoveFileTool, ReadFileTool, WriteFileTool
 from app.tools.ocr_extract import OCRExtractTool
 from app.tools.swarm_delegate import DelegateSubtaskTool
+from app.tools.web_fetch import WebFetchTool
+from app.tools.web_search import WebSearchTool
+
 
 class ToolRegistry:
     def __init__(self):

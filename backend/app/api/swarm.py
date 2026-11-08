@@ -1,15 +1,11 @@
 import asyncio
 import logging
-from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException, Request
-from app.models.schemas import (
-    SwarmRunRequest,
-    SwarmRunResponse,
-    SwarmSubtask,
-    SessionCreate
-)
-from app.engine.session_manager import session_manager
+
 from app.core.identity import Principal, require_workspace_access
+from app.engine.session_manager import session_manager
+from app.models.schemas import SessionCreate, SwarmRunRequest, SwarmRunResponse, SwarmSubtask
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +57,16 @@ async def run_swarm(request: Request, payload: SwarmRunRequest):
                 enabled_tools=sub.tools_allowed or []
             )
             child = await session_manager.create_session(worker_create)
-            await session_manager.start_session(child.id)
+            started = await session_manager.start_execution(child.id)
+            if not started:
+                return {
+                    "id": child.id,
+                    "name": sub.name,
+                    "status": "failed",
+                    "summary": "Worker session could not be started (already running or invalid state)",
+                    "artifacts": [],
+                }
+            logger.info("Swarm worker '%s' started as session %s", sub.name, child.id)
 
             # Wait for completion (up to 45 seconds)
             for _ in range(45):
@@ -113,11 +118,27 @@ async def run_swarm(request: Request, payload: SwarmRunRequest):
 
     synthesis_text = "\n".join(synthesis_lines)
 
+    # Never report success when workers failed: the status must reflect what
+    # actually happened (rules.md §9.1 — no fabricated results).
+    statuses = [w.get("status") for w in worker_results]
+    if worker_results and all(status == "completed" for status in statuses):
+        swarm_status = "completed"
+    elif any(status == "completed" for status in statuses):
+        swarm_status = "partial"
+    else:
+        swarm_status = "failed"
+    failures = [w for w in worker_results if w.get("status") not in {"completed"}]
+    if failures:
+        logger.error(
+            "Swarm run finished with status %s: %d/%d workers did not complete",
+            swarm_status, len(failures), len(worker_results),
+        )
+
     return SwarmRunResponse(
         master_session_id=master_session.id,
         goal=payload.goal,
         worker_session_ids=worker_session_ids,
-        status="completed",
+        status=swarm_status,
         synthesis=synthesis_text,
         artifacts_created=all_artifacts
     )

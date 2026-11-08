@@ -1,11 +1,14 @@
 import ipaddress
 import re
 import socket
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
-from typing import Dict, Any, Tuple, Optional
+
 import httpx
-from app.tools.base import BaseTool
+
 from app.core.safety import safety_engine
+from app.tools.base import BaseTool
+
 
 def is_ssrf_safe_url(url: str) -> Tuple[bool, Optional[str]]:
     try:
@@ -27,7 +30,7 @@ def is_ssrf_safe_url(url: str) -> Tuple[bool, Optional[str]]:
     # Resolve IP addresses for hostname
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
-        for family, _, _, _, sockaddr in addr_infos:
+        for _family, _, _, _, sockaddr in addr_infos:
             ip_str = sockaddr[0]
             ip = ipaddress.ip_address(ip_str)
             if (
@@ -112,7 +115,7 @@ class WebFetchTool(BaseTool):
 
         # Prompt injection inspection (rules.md §3)
         has_injection, injection_msg = safety_engine.detect_prompt_injection(raw_text)
-        
+
         # Enforce structural separation
         safe_wrapped = safety_engine.wrap_untrusted_content(url, raw_text)
 

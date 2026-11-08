@@ -1,15 +1,29 @@
-import asyncio
-from typing import List, Optional
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, UploadFile, File
-from app.models.schemas import (
-    SessionModel, SessionCreate, PlanModel, StepBase, PlanEditRequest,
-    ActivityFeedEvent, SessionPermissionUpdate, TerminalCommandRequest, TerminalCommandResponse
-)
-from app.engine.session_manager import session_manager
-from app.engine.planner import planner_engine
-from app.core.identity import Principal, require_workspace_access, parse_identity_token, anonymous_principal, identity_verification_configured
+from typing import List, Optional
+
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+
 from app.config import settings
+from app.core.identity import (
+    Principal,
+    anonymous_principal,
+    identity_verification_configured,
+    parse_identity_token,
+    require_workspace_access,
+)
+from app.core.rate_limit import session_creation_limiter, terminal_command_limiter
+from app.engine.planner import planner_engine
+from app.engine.session_manager import session_manager
+from app.models.schemas import (
+    ActivityFeedEvent,
+    PlanEditRequest,
+    PlanModel,
+    SessionCreate,
+    SessionModel,
+    SessionPermissionUpdate,
+    TerminalCommandRequest,
+    TerminalCommandResponse,
+)
 from app.sandbox.process_sandbox import sandbox_manager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -27,10 +41,18 @@ def _assert_session_access(request: Request, session: SessionModel) -> None:
 
 @router.post("", response_model=SessionModel)
 async def create_session(request: Request, payload: SessionCreate):
+    principal = _principal(request)
     try:
-        require_workspace_access(_principal(request), payload.workspace_id)
+        require_workspace_access(principal, payload.workspace_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
+    allowed, retry_after = session_creation_limiter.allow(f"{principal.subject}:{payload.workspace_id}")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many task creations; slow down and retry shortly.",
+            headers={"Retry-After": str(max(1, int(retry_after) + 1))},
+        )
     try:
         return await session_manager.create_session(payload)
     except PermissionError as exc:
@@ -42,11 +64,12 @@ async def create_session(request: Request, payload: SessionCreate):
 async def list_sessions(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     bot_id: Optional[str] = Query(None),
     channel_id: Optional[str] = Query(None),
 ):
     principal = _principal(request)
-    sessions = await session_manager.list_sessions(limit, bot_id=bot_id, channel_id=channel_id)
+    sessions = await session_manager.list_sessions(limit, offset=offset, bot_id=bot_id, channel_id=channel_id)
     return [session for session in sessions if principal.can_access_workspace(session.workspace_id)]
 
 @router.get("/plan-tier/status")
@@ -132,7 +155,9 @@ async def edit_session_plan(request: Request, session_id: str, payload: PlanEdit
     try:
         return await planner_engine.edit_plan(session_id, session.plan, payload)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = str(exc)
+        status = 404 if "not found in plan" in detail.lower() else 400
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 @router.post("/{session_id}/permissions", response_model=SessionModel)
 async def update_session_permissions(request: Request, session_id: str, payload: SessionPermissionUpdate):
@@ -156,7 +181,12 @@ async def start_session(request: Request, session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
-    await session_manager.start_execution(session_id)
+    try:
+        started = await session_manager.start_execution(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not started:
+        raise HTTPException(status_code=409, detail="Session is already running")
     return {"status": "started", "session_id": session_id}
 
 @router.post("/{session_id}/pause")
@@ -165,7 +195,10 @@ async def pause_session(request: Request, session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
-    await session_manager.pause_session(session_id)
+    try:
+        await session_manager.pause_session(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "paused", "session_id": session_id}
 
 @router.post("/{session_id}/resume")
@@ -174,7 +207,10 @@ async def resume_session(request: Request, session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
-    await session_manager.resume_session(session_id)
+    try:
+        await session_manager.resume_session(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "resumed", "session_id": session_id}
 
 @router.post("/{session_id}/cancel")
@@ -183,7 +219,11 @@ async def cancel_session(request: Request, session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
-    await session_manager.cancel_session(session_id)
+    try:
+        await session_manager.cancel_session(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "cancelled", "session_id": session_id}
 @router.post("/{session_id}/terminal", response_model=TerminalCommandResponse)
 async def execute_terminal_command(
     request: Request,
@@ -194,7 +234,15 @@ async def execute_terminal_command(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _assert_session_access(request, session)
-    
+
+    principal = _principal(request)
+    allowed, retry_after = terminal_command_limiter.allow(f"terminal:{principal.subject}:{session_id}")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many terminal commands; retry shortly.",
+            headers={"Retry-After": str(max(1, int(retry_after) + 1))},
+        )
     sandbox = sandbox_manager.get_or_create(session_id, session.workspace_id)
     result = await sandbox.execute_command(
         command=payload.command,

@@ -4,8 +4,8 @@ It provides the same correlation contract that an OpenTelemetry exporter can
 consume later without forcing the offline/local runtime to install a collector.
 """
 
-from contextvars import ContextVar
 import uuid
+from contextvars import ContextVar
 from typing import Optional
 
 _trace_id: ContextVar[Optional[str]] = ContextVar("coagent_trace_id", default=None)

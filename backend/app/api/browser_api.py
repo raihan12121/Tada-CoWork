@@ -1,8 +1,9 @@
-from typing import Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Query, Request, Body
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from app.sandbox.browser_service import browser_service
-from app.core.identity import Principal, require_workspace_access
 
 router = APIRouter(prefix="/browser", tags=["browser"])
 

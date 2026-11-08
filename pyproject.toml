@@ -1,0 +1,43 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["backend", "bridge", "desktop", "tools"]
+extend-exclude = [
+  "graphify-out",
+  "data",
+  "sandboxes",
+  "frontend",
+  "build",
+  "build_pc",
+  "dist",
+  "dist_pc",
+  "dist_installer",
+  ".venv",
+  ".tmp",
+  ".vendor",
+]
+
+[tool.ruff.lint]
+# Focused, enforceable baseline. Kept narrow on purpose: a rule set that can be
+# kept green is worth more than a broad one that is permanently red.
+select = ["E4", "E7", "E9", "F", "W", "I", "B", "SIM"]
+ignore = [
+  "B008",   # FastAPI Depends(...) in defaults is idiomatic
+  "E501",   # line length is advisory; formatter owns wrapping
+  "SIM108", # explicit if/else is often clearer in this codebase
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = [".", "backend"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+exclude = "(^|/)(build|dist|sandboxes|graphify-out|\\.venv)(/|$)"

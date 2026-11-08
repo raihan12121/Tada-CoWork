@@ -1,9 +1,11 @@
 import base64
 from email.message import EmailMessage
-from typing import Dict, Any
+from typing import Any, Dict
+
 import httpx
-from app.connectors.base import BaseConnector
+
 from app.config import settings
+from app.connectors.base import BaseConnector
 
 
 class GmailConnector(BaseConnector):

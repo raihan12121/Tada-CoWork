@@ -1,11 +1,11 @@
 # Technical Requirements Document (TRD)
-## Coagent — v1.0
+## AnyWork — v1.0
 
 ---
 
 ## 1. System Overview
 
-Coagent is composed of five cooperating subsystems:
+AnyWork is composed of five cooperating subsystems:
 
 1. **Client** (web/desktop/mobile UI) — chat + plan view + activity feed + artifact viewer.
 2. **Orchestrator service** — owns sessions, planning, task graph, approval gates, scheduling.

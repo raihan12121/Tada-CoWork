@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from app.models.schemas import ApprovalResponse
+
 from app.engine.approval_gate import approval_gate_manager
+from app.models.schemas import ApprovalResponse
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 

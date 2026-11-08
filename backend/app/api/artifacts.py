@@ -1,11 +1,12 @@
 import re
 from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse
-from app.config import settings
-from app.sandbox.process_sandbox import sandbox_manager
-from app.engine.session_manager import session_manager
+from fastapi.responses import FileResponse
+
 from app.core.identity import Principal, require_workspace_access
+from app.engine.session_manager import session_manager
+from app.sandbox.process_sandbox import sandbox_manager
 
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 
@@ -32,10 +33,10 @@ async def download_artifact(request: Request, session_id: str, filename: str):
     if ".." in filename or safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename format")
     file_path = (sandbox.artifacts_dir / safe_name) if sandbox else (sandbox_manager.archived_artifacts_dir(session_id) / safe_name)
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file not found")
-        
+
     return FileResponse(
         path=str(file_path),
         filename=safe_name,
@@ -52,10 +53,10 @@ async def preview_artifact(request: Request, session_id: str, filename: str):
     if ".." in filename or safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename format")
     file_path = (sandbox.artifacts_dir / safe_name) if sandbox else (sandbox_manager.archived_artifacts_dir(session_id) / safe_name)
-    
+
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Artifact file not found")
-        
+
     ext = file_path.suffix.lower()
     try:
         if ext in (".md", ".txt", ".json", ".py", ".js", ".html", ".log"):

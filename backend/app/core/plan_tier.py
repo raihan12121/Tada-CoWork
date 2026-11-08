@@ -1,7 +1,9 @@
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-from sqlalchemy import select, func
+from typing import Any, Dict
+
+from sqlalchemy import func, select
+
 from app.db.session import AsyncSessionLocal, DBSession
 
 PLAN_TIERS = {

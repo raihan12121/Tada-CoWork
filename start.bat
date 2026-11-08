@@ -1,5 +1,5 @@
 @echo off
-echo Starting Coagent (Tada-CoWork)...
+echo Starting AnyWork...
 
 start cmd /k ".venv\Scripts\python -m uvicorn app.main:app --app-dir backend --reload --port 8000"
 start cmd /k "cd frontend && npm run dev"

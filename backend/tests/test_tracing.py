@@ -1,11 +1,9 @@
-import json
 
 import httpx
 import pytest
 
-from app.main import app
 from app.core.audit import audit_logger
-from app.core.tracing import get_trace_id
+from app.main import app
 
 
 @pytest.mark.asyncio

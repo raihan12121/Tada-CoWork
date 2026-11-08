@@ -1,13 +1,13 @@
-import os
-import sys
-import json
-import time
-import socket
 import asyncio
+import contextlib
+import json
 import logging
+import os
+import socket
 import subprocess
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+import time
+from typing import Any, Dict, Optional
+
 import httpx
 import websockets
 
@@ -159,9 +159,9 @@ class BrowserService:
 
         self.current_url = url
         try:
-            res = await self._send_cdp("Page.navigate", {"url": url}, timeout=20.0)
+            await self._send_cdp("Page.navigate", {"url": url}, timeout=20.0)
             await asyncio.sleep(1.0) # Allow DOM rendering
-            
+
             # Retrieve title and actual URL
             eval_res = await self._send_cdp("Runtime.evaluate", {
                 "expression": "JSON.stringify({title: document.title, url: window.location.href})"
@@ -293,10 +293,8 @@ class BrowserService:
                 self.process.terminate()
                 self.process.wait(timeout=2.0)
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     self.process.kill()
-                except Exception:
-                    pass
             self.process = None
             self.ws_url = None
 

@@ -1,11 +1,12 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator
+
 from fastapi import APIRouter, HTTPException, Query, Request
-from app.models.schemas import MemoryItemModel, MemoryType, MemoryUpdate
-from app.memory.long_term_memory import long_term_memory
+from pydantic import BaseModel, Field, field_validator
+
 from app.core.identity import Principal, require_workspace_access
 from app.db.session import AsyncSessionLocal, DBMemoryItem
-from sqlalchemy import select
+from app.memory.long_term_memory import long_term_memory
+from app.models.schemas import MemoryItemModel, MemoryType, MemoryUpdate
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 

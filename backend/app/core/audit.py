@@ -3,9 +3,73 @@ import json
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from app.config import settings
 from app.core.tracing import get_trace_id
+
+
+def _lock_file(handle) -> None:
+    """Take an exclusive OS-level lock (threads alone cannot serialise processes)."""
+    if os.name == "nt":  # pragma: no cover - platform specific
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    else:  # pragma: no cover - platform specific
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_file(handle) -> None:
+    if os.name == "nt":  # pragma: no cover - platform specific
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:  # pragma: no cover - platform specific
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _read_last_hash(handle) -> str:
+    """Read the tail hash from an already-locked append handle.
+
+    Audit entries can be arbitrarily large (a session task or a tool payload may
+    be hundreds of kilobytes), so a fixed-size tail window is not safe: it can
+    land mid-JSON and silently truncate the chain. Grow the read window until a
+    complete, parseable entry is found.
+    """
+    handle.seek(0, os.SEEK_END)
+    size = handle.tell()
+    if size == 0:
+        return "0" * 64
+
+    window = 64 * 1024
+    while True:
+        start = max(0, size - window)
+        handle.seek(start)
+        chunk = handle.read()
+        lines = [line for line in chunk.splitlines() if line.strip()]
+        # When the window does not reach the start of the file, the first line
+        # is a partial fragment and must be discarded.
+        if start > 0 and len(lines) > 1:
+            lines = lines[1:]
+        if lines:
+            try:
+                entry = json.loads(lines[-1])
+                if isinstance(entry, dict) and entry.get("hash"):
+                    return str(entry["hash"])
+            except ValueError:
+                pass
+        if start == 0:
+            # The entire file was read and the final entry is not valid JSON;
+            # never fabricate a zero hash (that silently forks the chain).
+            raise ValueError("Audit chain tail is unreadable; refusing to append to a corrupted chain")
+        window *= 4
+
 
 class AuditLogger:
     def __init__(self, log_dir: Optional[str] = None):
@@ -18,7 +82,7 @@ class AuditLogger:
     def _get_latest_hash(self) -> str:
         if not os.path.exists(self.log_file):
             return "0" * 64
-        
+
         last_line = ""
         try:
             with open(self.log_file, "r", encoding="utf-8") as f:
@@ -56,43 +120,40 @@ class AuditLogger:
         trace_id = get_trace_id()
         if trace_id and "trace_id" not in details:
             details = {**details, "trace_id": trace_id}
-        
-        payload_to_hash = {
+
+        base_payload = {
             "session_id": session_id,
             "step_id": step_id,
             "event_type": event_type,
             "actor": actor,
             "details": details,
             "timestamp": timestamp,
-            "prev_hash": self._last_hash
         }
-        
-        entry_hash = hashlib.sha256(
-            json.dumps(payload_to_hash, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        
-        record = {
-            **payload_to_hash,
-            "hash": entry_hash
-        }
-        
+
         # Parallel executor branches share this logger, so the hash-chain
-        # update and append must be atomic as one critical section.
-        with self._lock:
-            payload_to_hash["prev_hash"] = self._last_hash
-            entry_hash = hashlib.sha256(
-                json.dumps(payload_to_hash, sort_keys=True).encode("utf-8")
-            ).hexdigest()
-            record = {**payload_to_hash, "hash": entry_hash}
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record) + "\n")
-            self._last_hash = entry_hash
-        return record
+        # update and append must be atomic. Appends also take an OS-level file
+        # lock and re-read the true tail hash, so two backend processes (for
+        # example the desktop launcher and a dev uvicorn) cannot fork the chain.
+        with self._lock, open(self.log_file, "a+", encoding="utf-8") as handle:
+            _lock_file(handle)
+            try:
+                payload_to_hash = {**base_payload, "prev_hash": _read_last_hash(handle)}
+                entry_hash = hashlib.sha256(
+                    json.dumps(payload_to_hash, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                record = {**payload_to_hash, "hash": entry_hash}
+                handle.write(json.dumps(record) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+                self._last_hash = entry_hash
+                return record
+            finally:
+                _unlock_file(handle)
 
     def verify_integrity(self) -> Tuple[bool, Optional[str]]:
         if not os.path.exists(self.log_file):
             return True, None
-            
+
         prev_hash = "0" * 64
         line_num = 0
         with open(self.log_file, "r", encoding="utf-8") as f:
@@ -103,7 +164,7 @@ class AuditLogger:
                 entry = json.loads(line.strip())
                 if entry.get("prev_hash") != prev_hash:
                     return False, f"Hash mismatch at line {line_num}: expected prev {prev_hash}, found {entry.get('prev_hash')}"
-                
+
                 payload = {
                     "session_id": entry["session_id"],
                     "step_id": entry.get("step_id"),
@@ -117,14 +178,14 @@ class AuditLogger:
                 if computed != entry.get("hash"):
                     return False, f"Corrupted entry hash at line {line_num}"
                 prev_hash = entry["hash"]
-                
+
         return True, None
 
     def export_audit_log(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
         entries = []
         if not os.path.exists(self.log_file):
             return entries
-            
+
         with open(self.log_file, "r", encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
@@ -134,5 +195,4 @@ class AuditLogger:
                     entries.append(entry)
         return entries
 
-from typing import Tuple
 audit_logger = AuditLogger()

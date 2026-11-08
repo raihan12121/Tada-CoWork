@@ -1,22 +1,24 @@
-import json
-import re
 import hashlib
 import hmac
 import io
-import zipfile
+import json
+import re
 import tarfile
-from pathlib import Path
+import zipfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, Header, Request, UploadFile, File
+
+from fastapi import APIRouter, File, Header, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select, update
+
 from app.config import settings
 from app.core.audit import audit_logger
-from app.core.org_policy import org_policy_manager
-from app.db.session import AsyncSessionLocal, DBSession, DBActivityEvent, DBOrganization, DBConnectorReview
-from app.tools.registry import tool_registry
-from pydantic import BaseModel, Field
-from sqlalchemy import select, delete, update
 from app.core.identity import Principal, identity_verification_configured
+from app.core.org_policy import org_policy_manager
+from app.db.session import AsyncSessionLocal, DBActivityEvent, DBConnectorReview, DBOrganization, DBSession
+from app.tools.registry import tool_registry
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -234,9 +236,13 @@ async def review_connector(request: Request, connector_name: str, payload: Conne
                     status_code=409,
                     detail="Approved connector manifests are immutable; submit the new version for re-approval first.",
                 )
-        if payload.review_status == "approved" and settings.MARKETPLACE_REQUIRE_PACKAGE_SCAN and payload.package_sha256:
-            if not review or review.scan_status != "passed" or review.package_sha256 != payload.package_sha256:
-                raise HTTPException(status_code=409, detail="Package must pass the marketplace scan before approval")
+        if (
+            payload.review_status == "approved"
+            and settings.MARKETPLACE_REQUIRE_PACKAGE_SCAN
+            and payload.package_sha256
+            and (not review or review.scan_status != "passed" or review.package_sha256 != payload.package_sha256)
+        ):
+            raise HTTPException(status_code=409, detail="Package must pass the marketplace scan before approval")
         if not review:
             review = DBConnectorReview(id=str(__import__("uuid").uuid4()), connector_name=connector_name)
             db.add(review)
@@ -360,7 +366,7 @@ async def emergency_kill_switch(request: Request, x_admin_token: Optional[str] =
     _require_admin(x_admin_token, request)
     from app.engine.session_manager import session_manager
     count = len(session_manager._active_executors)
-    for sid, executor in list(session_manager._active_executors.items()):
+    for _sid, executor in list(session_manager._active_executors.items()):
         executor.cancel()
     if count:
         async with AsyncSessionLocal() as db:

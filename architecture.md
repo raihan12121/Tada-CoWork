@@ -1,4 +1,4 @@
-# Architecture — Coagent
+# Architecture — AnyWork
 
 ---
 

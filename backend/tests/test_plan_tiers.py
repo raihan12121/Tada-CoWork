@@ -1,9 +1,11 @@
 import pytest
-from app.core.plan_tier import plan_tier_manager, PLAN_TIERS
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
+from app.core.plan_tier import PLAN_TIERS, plan_tier_manager
+from app.engine.session_manager import session_manager
 from app.main import app
 from app.models.schemas import SessionCreate
-from app.engine.session_manager import session_manager
+
 
 @pytest.mark.asyncio
 async def test_plan_tier_manager_basics():
@@ -49,12 +51,12 @@ async def test_plan_tier_api():
 async def test_rich_artifact_previews():
     from app.sandbox.process_sandbox import sandbox_manager
     from app.tools.doc_gen import CreateDocumentTool
-    
+
     await plan_tier_manager.set_tier("enterprise", "default")
     # Create actual session in DB
     sess = await session_manager.create_session(SessionCreate(task="Test rich previews", workspace_id="default"))
     session_id = sess.id
-    sandbox = sandbox_manager.get_or_create(session_id)
+    sandbox_manager.get_or_create(session_id)
     doc_tool = CreateDocumentTool()
 
     # Generate XLSX

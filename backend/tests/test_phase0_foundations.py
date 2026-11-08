@@ -3,9 +3,9 @@ import asyncio
 import httpx
 import pytest
 
+from app.engine.session_manager import session_manager
 from app.main import app
 from app.models.schemas import SessionCreate
-from app.engine.session_manager import session_manager
 from app.sandbox.process_sandbox import SandboxSession
 
 

@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 from typing import AsyncGenerator
-from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, create_engine, text, select
-)
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship
+
 from app.config import settings
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -14,7 +15,7 @@ Base = declarative_base()
 
 class DBSession(Base):
     __tablename__ = "sessions"
-    
+
     id = Column(String, primary_key=True)
     task = Column(Text, nullable=False)
     workspace_id = Column(String, default="default", index=True)
@@ -35,7 +36,7 @@ class DBSession(Base):
     max_runtime_seconds = Column(Integer, default=300)
     created_at = Column(DateTime, default=utc_now, index=True)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
-    
+
     plans = relationship("DBPlan", back_populates="session", cascade="all, delete-orphan")
     approvals = relationship("DBApproval", back_populates="session", cascade="all, delete-orphan")
     artifacts = relationship("DBArtifact", back_populates="session", cascade="all, delete-orphan")
@@ -57,20 +58,20 @@ class DBExecutionJob(Base):
 
 class DBPlan(Base):
     __tablename__ = "plans"
-    
+
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     version = Column(Integer, default=1)
     status = Column(String, default="draft", index=True)
     explanation = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now)
-    
+
     session = relationship("DBSession", back_populates="plans")
     steps = relationship("DBStep", back_populates="plan", cascade="all, delete-orphan")
 
 class DBStep(Base):
     __tablename__ = "steps"
-    
+
     id = Column(String, primary_key=True)
     plan_id = Column(String, ForeignKey("plans.id"), nullable=False, index=True)
     step_order = Column(Integer, nullable=False)
@@ -81,12 +82,12 @@ class DBStep(Base):
     status = Column(String, default="pending", index=True)
     result_summary = Column(Text, nullable=True)
     failure_count = Column(Integer, default=0)
-    
+
     plan = relationship("DBPlan", back_populates="steps")
 
 class DBToolCall(Base):
     __tablename__ = "tool_calls"
-    
+
     id = Column(String, primary_key=True)
     session_id = Column(String, nullable=False, index=True)
     step_id = Column(String, nullable=True, index=True)
@@ -100,7 +101,7 @@ class DBToolCall(Base):
 
 class DBApproval(Base):
     __tablename__ = "approvals"
-    
+
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     step_id = Column(String, nullable=True)
@@ -117,12 +118,12 @@ class DBApproval(Base):
     resolved_at = Column(DateTime, nullable=True)
     actor = Column(String, nullable=True)
     user_feedback = Column(Text, nullable=True)
-    
+
     session = relationship("DBSession", back_populates="approvals")
 
 class DBArtifact(Base):
     __tablename__ = "artifacts"
-    
+
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
@@ -132,12 +133,12 @@ class DBArtifact(Base):
     created_at = Column(DateTime, default=utc_now)
     summary = Column(Text, nullable=True)
     version = Column(Integer, default=1)
-    
+
     session = relationship("DBSession", back_populates="artifacts")
 
 class DBMemoryItem(Base):
     __tablename__ = "memory_items"
-    
+
     id = Column(String, primary_key=True)
     type = Column(String, nullable=False) # fact, preference, summary
     key = Column(String, nullable=True)
@@ -150,7 +151,7 @@ class DBMemoryItem(Base):
 
 class DBSchedule(Base):
     __tablename__ = "schedules"
-    
+
     id = Column(String, primary_key=True)
     workspace_id = Column(String, default="default", index=True)
     title = Column(String, nullable=False)
@@ -167,7 +168,7 @@ class DBSchedule(Base):
 
 class DBConnector(Base):
     __tablename__ = "connectors"
-    
+
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     connector_type = Column(String, nullable=False)

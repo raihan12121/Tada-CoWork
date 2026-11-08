@@ -1,14 +1,14 @@
-import os
-import sys
-import io
-import time
-import socket
-import urllib.request
-import threading
-import traceback
+import contextlib
 import ctypes
+import io
+import os
+import socket
+import sys
+import threading
+import time
+import traceback
+import urllib.request
 from pathlib import Path
-import webview
 
 # 1. Setup user data directory first
 USER_DATA_DIR = Path(os.getenv("APPDATA", Path.home())) / "AnyWork"
@@ -41,13 +41,15 @@ def log_debug(msg: str):
 # Redirect them to persistent log files so isatty() and write() never fail.
 if sys.stdout is None:
     try:
-        sys.stdout = open(USER_DATA_DIR / "app_output.log", "a", encoding="utf-8", buffering=1)
+        # Kept as a module-level stream for the process lifetime; a context
+        # manager would close it immediately.
+        sys.stdout = open(USER_DATA_DIR / "app_output.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
     except Exception:
         sys.stdout = io.StringIO()
 
 if sys.stderr is None:
     try:
-        sys.stderr = open(USER_DATA_DIR / "app_error.log", "a", encoding="utf-8", buffering=1)
+        sys.stderr = open(USER_DATA_DIR / "app_error.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
     except Exception:
         sys.stderr = io.StringIO()
 
@@ -84,10 +86,8 @@ BACKEND_DIR = ROOT_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-try:
+with contextlib.suppress(Exception):
     os.chdir(str(USER_DATA_DIR))
-except Exception:
-    pass
 
 WINDOW_TITLE = "AnyWork"
 
@@ -117,10 +117,8 @@ def wait_for_backend_ready(port: int, max_wait: float = 12.0) -> bool:
 
 def show_error_dialog(title: str, message: str):
     """Show native Windows error message box."""
-    try:
+    with contextlib.suppress(Exception):
         ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # MB_ICONERROR
-    except Exception:
-        pass
 
 def main():
     log_debug("=== AnyWork Desktop Launcher Started ===")
@@ -130,6 +128,7 @@ def main():
     # Start FastAPI backend orchestrator in background thread
     try:
         import uvicorn
+
         from app.main import app
         log_debug("Successfully loaded FastAPI app module.")
     except Exception as imp_err:
@@ -172,7 +171,7 @@ def main():
 
     try:
         log_debug("Creating WebView2 window...")
-        window = webview.create_window(
+        webview.create_window(
             title=WINDOW_TITLE,
             url=f"http://127.0.0.1:{port}/",
             width=1340,
@@ -197,10 +196,8 @@ if __name__ == "__main__":
     except Exception as exc:
         err_msg = traceback.format_exc()
         crash_log = USER_DATA_DIR / "crash.log"
-        try:
+        with contextlib.suppress(Exception):
             crash_log.write_text(err_msg, encoding="utf-8")
-        except Exception:
-            pass
         log_debug(f"FATAL STARTUP EXCEPTION: {exc}\n{err_msg}")
         show_error_dialog(
             "AnyWork Startup Error",

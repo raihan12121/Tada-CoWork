@@ -1,6 +1,8 @@
-import pytest
 import httpx
+import pytest
+
 from app.main import app
+
 
 @pytest.mark.asyncio
 async def test_create_session_success():
@@ -60,7 +62,7 @@ async def test_session_lifecycle_actions_on_nonexistent_session():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         ghost_id = "ghost-session-uuid-0000"
-        
+
         # Pause nonexistent
         p_resp = await client.post(f"/v1/sessions/{ghost_id}/pause")
         assert p_resp.status_code == 404
@@ -101,18 +103,22 @@ async def test_terminal_command_execution():
 async def test_list_sessions_bot_filtering():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Bots must exist: session creation now validates referenced bot ids.
+        bot_a = (await client.post("/v1/bots", json={"name": "Filter Bot Alpha", "description": "d"})).json()["id"]
+        bot_b = (await client.post("/v1/bots", json={"name": "Filter Bot Beta", "description": "d"})).json()["id"]
+
         # Create session for bot A
-        bot_a_resp = await client.post("/v1/sessions", json={"task": "Task for Bot A", "bot_id": "test_bot_alpha"})
+        bot_a_resp = await client.post("/v1/sessions", json={"task": "Task for Bot A", "bot_id": bot_a})
         assert bot_a_resp.status_code == 200
-        
+
         # Create session for bot B
-        bot_b_resp = await client.post("/v1/sessions", json={"task": "Task for Bot B", "bot_id": "test_bot_beta"})
+        bot_b_resp = await client.post("/v1/sessions", json={"task": "Task for Bot B", "bot_id": bot_b})
         assert bot_b_resp.status_code == 200
 
         # Filter by bot A
-        res_a = await client.get("/v1/sessions?bot_id=test_bot_alpha")
+        res_a = await client.get(f"/v1/sessions?bot_id={bot_a}")
         assert res_a.status_code == 200
         items_a = res_a.json()
         assert len(items_a) >= 1
-        assert all(s["bot_id"] == "test_bot_alpha" for s in items_a)
+        assert all(s["bot_id"] == bot_a for s in items_a)
 

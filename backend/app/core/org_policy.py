@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
 import json
-from typing import Dict, Set, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, Set
+
 from app.config import settings
 
 

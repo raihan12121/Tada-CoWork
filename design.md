@@ -1,4 +1,4 @@
-# Design — UX & Interaction Design for Coagent
+# Design — UX & Interaction Design for AnyWork
 
 ---
 
@@ -22,7 +22,7 @@
 ### 2.2 Plan View
 - Rendered as a numbered, collapsible step list, each step showing: short description, tool it will use, risk tier badge (low/medium/high), and dependency links for parallel branches.
 - Inline edit affordances: reorder, remove, add a step, before execution starts.
-- A single "Start" action; a visible "Coagent will ask before doing anything risky" reassurance line.
+- A single "Start" action; a visible "AnyWork will ask before doing anything risky" reassurance line.
 
 ### 2.3 Activity Feed (live)
 - Two toggleable views:

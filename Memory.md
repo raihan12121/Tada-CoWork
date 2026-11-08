@@ -1,10 +1,10 @@
-# Memory — Coagent Memory System
+# Memory — AnyWork Memory System
 
 ---
 
 ## 1. Why Memory Matters Here
 
-A single-shot agent re-derives context every time, which wastes turns and produces inconsistent results ("what format do you like your reports in?" asked every session). Neither Claude Cowork nor ChatGPT Agent Mode does much cross-session learning today (sessions are largely self-contained, scheduled tasks just re-run a prompt) — this is a real opportunity for Coagent to differentiate, but it must be built with strict user control given the sensitivity of "an agent that remembers things about you and your work."
+A single-shot agent re-derives context every time, which wastes turns and produces inconsistent results ("what format do you like your reports in?" asked every session). Neither Claude Cowork nor ChatGPT Agent Mode does much cross-session learning today (sessions are largely self-contained, scheduled tasks just re-run a prompt) — this is a real opportunity for AnyWork to differentiate, but it must be built with strict user control given the sensitivity of "an agent that remembers things about you and your work."
 
 ## 2. Memory Tiers
 

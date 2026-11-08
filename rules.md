@@ -1,4 +1,4 @@
-# Rules — Safety, Permissions & Operating Policy for Coagent
+# Rules — Safety, Permissions & Operating Policy for AnyWork
 
 These rules govern how the agent is allowed to behave. They are enforced in code (orchestrator + sandbox policy engine), not just prompted — the LLM's own judgment is a second layer, never the only layer.
 

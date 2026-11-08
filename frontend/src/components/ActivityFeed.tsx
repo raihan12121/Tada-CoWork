@@ -50,7 +50,12 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   };
 
   return (
-    <div className="bg-[#09090c] border border-white/[0.08] rounded-2xl flex flex-col h-[540px] shadow-2xl overflow-hidden">
+    <div
+      role="log"
+      aria-live="polite"
+      aria-label="Agent activity feed"
+      className="bg-[#09090c] border border-white/[0.08] rounded-2xl flex flex-col h-[540px] shadow-2xl overflow-hidden"
+    >
       {/* Feed Header */}
       <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-black/40">
         <div className="flex items-center gap-3">

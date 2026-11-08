@@ -1,15 +1,16 @@
-import os
-import sys
-import time
 import argparse
+import hmac
 import json
-import threading
-import urllib.request
-import ssl
+import os
 import shutil
+import ssl
+import threading
+import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import List, Optional
+
 
 class LocalBridgeAgent:
     """
@@ -148,7 +149,7 @@ def serve(agent: LocalBridgeAgent, host: str, port: int, certfile: Optional[str]
                 self._json(404, {"error": "not found"})
 
         def do_POST(self):
-            if self.headers.get("X-Bridge-Token") != agent.token:
+            if not hmac.compare_digest(self.headers.get("X-Bridge-Token", ""), agent.token):
                 self._json(401, {"error": "invalid bridge token"})
                 return
             length = int(self.headers.get("Content-Length", "0"))

@@ -1,8 +1,11 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 import httpx
-from app.tools.base import BaseTool
+
 from app.config import settings
 from app.sandbox.browser_service import browser_service
+from app.tools.base import BaseTool
+
 
 class BrowserAutomationTool(BaseTool):
     name = "browser_automation"
@@ -65,7 +68,7 @@ class BrowserAutomationTool(BaseTool):
                 elif action == "get_text":
                     txt = await browser_service.get_page_text()
                     return {"success": True, "text": txt[:8000]}
-        except Exception as e:
+        except Exception:
             # Fall back to desktop bridge if native service failed
             pass
 

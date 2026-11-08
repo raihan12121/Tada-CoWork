@@ -1,37 +1,68 @@
-import re
-import math
-import uuid
 import hashlib
+import math
+import re
+import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
-from sqlalchemy import select, update, delete
-from app.db.session import AsyncSessionLocal, DBMemoryItem, DBWorkspace
-from app.models.schemas import MemoryItemModel, MemoryCandidate, MemoryType, MemoryUpdate
+from typing import Dict, List, Optional
 
-def compute_simple_embedding(text: str) -> List[float]:
+from sqlalchemy import delete, select
+
+from app.db.session import AsyncSessionLocal, DBMemoryItem, DBWorkspace
+from app.models.schemas import MemoryCandidate, MemoryItemModel, MemoryType, MemoryUpdate
+
+EMBEDDING_DIMENSIONS = 256
+
+# Function words carry almost no retrieval signal; excluding them keeps the
+# hashed vector focused on topical content.
+_STOPWORDS = frozenset(
+    ["a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can", "do", "does", "for", "from", "has", "have", "how", "i", "if", "in", "into", "is", "it", "its", "me", "my", "not", "of", "on", "or", "our", "so", "than", "that", "the", "their", "them", "then", "there", "these", "they", "this", "to", "was", "we", "were", "what", "when", "where", "which", "who", "will", "with", "you", "your"]
+)
+
+
+def _bucket(token: str, dimensions: int) -> tuple:
+    """Stable signed hash bucket (Python's built-in hash is seeded per process)."""
+    digest = hashlib.sha256(token.encode("utf-8")).digest()
+    index = int.from_bytes(digest[:4], "big") % dimensions
+    sign = 1.0 if digest[4] & 1 else -1.0
+    return index, sign
+
+
+def compute_simple_embedding(text: str, dimensions: int = EMBEDDING_DIMENSIONS) -> List[float]:
+    """Deterministic hashed bag-of-words + character-trigram embedding.
+
+    Character trigrams add morphological recall ("reporting" ~ "reports",
+    "invoice" ~ "invoicing") that a pure word-frequency vector misses, without
+    pulling in torch/sentence-transformers. Signed hashing keeps collisions
+    roughly zero-mean instead of always inflating scores.
     """
-    Lightweight, fast n-gram term frequency vector for semantic similarity ranking.
-    Avoids heavy torch/sentence-transformers dependencies while delivering accurate recall.
-    """
-    words = re.findall(r"\w+", text.lower())
-    freq: Dict[str, float] = {}
-    for w in words:
-        freq[w] = freq.get(w, 0.0) + 1.0
-        
-    norm = math.sqrt(sum(v * v for v in freq.values())) or 1.0
-    # Create fixed-hash projection vector
-    vec_len = 64
-    vec = [0.0] * vec_len
-    for w, count in freq.items():
-        # Python's built-in hash is intentionally randomized per process;
-        # stable hashing keeps retrieval consistent after restarts.
-        digest = hashlib.sha256(w.encode("utf-8")).digest()
-        idx = int.from_bytes(digest[:4], "big") % vec_len
-        vec[idx] += (count / norm)
-    return vec
+    words = [
+        word
+        for word in re.findall(r"[a-z0-9]+", (text or "").lower())
+        if word not in _STOPWORDS
+    ]
+    counts: Dict[str, float] = {}
+    for word in words:
+        key = f"w:{word}"
+        counts[key] = counts.get(key, 0.0) + 2.0
+        padded = f"<{word}>"
+        for i in range(len(padded) - 2):
+            gram = f"c:{padded[i:i + 3]}"
+            counts[gram] = counts.get(gram, 0.0) + 1.0
+
+    vector = [0.0] * dimensions
+    for token, count in counts.items():
+        index, sign = _bucket(token, dimensions)
+        # Sublinear term frequency: repeated terms saturate instead of dominating.
+        vector[index] += sign * (1.0 + math.log(count))
+
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm:
+        vector = [value / norm for value in vector]
+    return vector
+
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-    dot = sum(a * b for a, b in zip(v1, v2))
+    dot = sum(a * b for a, b in zip(v1, v2, strict=False))
     norm1 = math.sqrt(sum(a * a for a in v1)) or 1.0
     norm2 = math.sqrt(sum(b * b for b in v2)) or 1.0
     return dot / (norm1 * norm2)
@@ -86,7 +117,7 @@ class LongTermMemoryManager:
             )
             db.add(db_item)
             await db.commit()
-            
+
             return MemoryItemModel(
                 id=item_id,
                 type=memory_type,
@@ -113,21 +144,21 @@ class LongTermMemoryManager:
         async with AsyncSessionLocal() as db:
             stmt = select(DBMemoryItem).where(
                 DBMemoryItem.workspace_id == workspace_id,
-                DBMemoryItem.is_active == True
+                DBMemoryItem.is_active
             )
             result = await db.execute(stmt)
             items = result.scalars().all()
-            
+
             if not items:
                 return []
-                
+
             q_vec = compute_simple_embedding(query)
             scored = []
             for item in items:
                 i_vec = compute_simple_embedding(f"{item.key or ''} {item.content}")
                 score = cosine_similarity(q_vec, i_vec)
                 scored.append((score, item))
-                
+
             scored.sort(key=lambda x: x[0], reverse=True)
             top_items = [
                 MemoryItemModel(

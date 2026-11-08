@@ -1,8 +1,11 @@
-from typing import Dict, Any
-from app.connectors.base import BaseConnector
-from app.config import settings
+from typing import Any, Dict
+
 import httpx
+
+from app.config import settings
+from app.connectors.base import BaseConnector
 from app.tools.web_fetch import is_ssrf_safe_url
+
 
 class SlackConnector(BaseConnector):
     name = "slack"
@@ -29,7 +32,7 @@ class SlackConnector(BaseConnector):
         action = kwargs.get("action", "list_channels")
         channel = kwargs.get("channel", "general")
         msg = kwargs.get("message", "")
-        
+
         if not settings.SLACK_TOKEN:
             return {"success": False, "connector": "slack", "error": "Slack token is not configured."}
         headers = {"Authorization": f"Bearer {settings.SLACK_TOKEN}"}
