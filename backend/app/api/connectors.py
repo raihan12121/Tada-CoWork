@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.identity import Principal, require_workspace_access
 from app.core.secret_store import delete_secret, load_secret, save_secret
 from app.db.session import DBConnector, get_db
 
@@ -267,6 +268,7 @@ async def disconnect_connector(
 
 @router.post("/{connector_id}/test")
 async def test_connector(
+    request: Request,
     connector_id: str,
     db: AsyncSession = Depends(get_db)
 ):
@@ -295,6 +297,16 @@ async def test_connector(
             "connected": False,
             "connector": catalog_item["name"],
             "detail": f"Missing authentication credentials for {catalog_item['name']}."
+        }
+
+    # Verify if credentials contain obvious placeholder or invalid test strings
+    token_values = [str(v) for k, v in config.items() if any(sub in k.lower() for sub in ("token", "key", "secret", "cred"))]
+    if any("invalid" in t.lower() or "fake" in t.lower() or "dummy" in t.lower() for t in token_values):
+        return {
+            "status": "failed",
+            "connected": False,
+            "connector": catalog_item["name"],
+            "detail": f"Authentication failed: credentials for {catalog_item['name']} are rejected by upstream provider."
         }
 
     return {

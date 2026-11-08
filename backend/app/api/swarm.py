@@ -1,9 +1,14 @@
 import asyncio
+import json
 import logging
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import update
 
 from app.core.identity import Principal, require_workspace_access
+from app.db.session import AsyncSessionLocal, DBActivityEvent, DBSession
 from app.engine.session_manager import session_manager
 from app.models.schemas import SessionCreate, SwarmRunRequest, SwarmRunResponse, SwarmSubtask
 
@@ -133,6 +138,24 @@ async def run_swarm(request: Request, payload: SwarmRunRequest):
             "Swarm run finished with status %s: %d/%d workers did not complete",
             swarm_status, len(failures), len(worker_results),
         )
+
+    # Persist completion and synthesis to master session record
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(DBSession).where(DBSession.id == master_session.id).values(
+                status="completed" if swarm_status == "completed" else "failed",
+                updated_at=datetime.now(timezone.utc)
+            )
+        )
+        db.add(DBActivityEvent(
+            id=str(uuid.uuid4()),
+            session_id=master_session.id,
+            timestamp=datetime.now(timezone.utc),
+            event_type="done" if swarm_status == "completed" else "error",
+            message=f"Swarm orchestration finished with status '{swarm_status}'.",
+            technical_details_json=json.dumps({"synthesis": synthesis_text, "status": swarm_status})
+        ))
+        await db.commit()
 
     return SwarmRunResponse(
         master_session_id=master_session.id,

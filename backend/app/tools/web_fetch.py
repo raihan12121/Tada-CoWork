@@ -91,15 +91,29 @@ class WebFetchTool(BaseTool):
             return {"success": False, "error": security_err}
 
         raw_text = ""
+        current_url = url
+        max_redirects = 5
         try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Coagent/1.0"}
-                resp = await client.get(url, headers=headers)
-                final_host = resp.url.hostname or ""
-                if allowed_domains is not None and not is_domain_granted(final_host, list(allowed_domains)):
-                    return {"success": False, "error": f"Redirected domain '{final_host}' is not granted for this session."}
-                if resp.status_code != 200:
-                    return {"success": False, "error": f"HTTP {resp.status_code}: Failed to fetch '{url}'."}
+                resp = None
+                for _ in range(max_redirects + 1):
+                    safe, sec_err = is_ssrf_safe_url(current_url)
+                    if not safe:
+                        return {"success": False, "error": sec_err or f"Redirect to unsafe URL '{current_url}' blocked."}
+                    final_host = urlparse(current_url).hostname or ""
+                    if allowed_domains is not None and not is_domain_granted(final_host, list(allowed_domains)):
+                        return {"success": False, "error": f"Domain '{final_host}' is not granted for this session."}
+                    resp = await client.get(current_url, headers=headers)
+                    if resp.is_redirect and "location" in resp.headers:
+                        from urllib.parse import urljoin
+                        current_url = urljoin(current_url, resp.headers["location"])
+                    else:
+                        break
+
+                if resp is None or resp.status_code != 200:
+                    status = resp.status_code if resp else "unknown"
+                    return {"success": False, "error": f"HTTP {status}: Failed to fetch '{current_url}'."}
                 html = resp.text
                 # Strip script and style tags
                 cleaned = re.sub(r"<(script|style).*?>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)

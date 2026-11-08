@@ -215,6 +215,8 @@ class McpManager:
                 t_name = t.get("name")
                 if not t_name:
                     continue
+                if tool_registry.is_core_tool(t_name):
+                    t_name = f"mcp_{t_name}"
                 dynamic_tool = DynamicMcpTool(
                     server_id=server_id,
                     name=t_name,

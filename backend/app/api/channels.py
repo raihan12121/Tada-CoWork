@@ -60,6 +60,13 @@ async def create_channel(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     channel_id = f"channel_{uuid.uuid4().hex[:10]}"
+    name = data.name.strip()
+    duplicate = (await db.execute(
+        select(DBChannel.id).where(DBChannel.workspace_id == data.workspace_id, DBChannel.name == name)
+    )).scalars().first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"A channel named '{name}' already exists in this workspace")
+
     if data.bot_ids:
         known = set((await db.execute(
             select(DBBot.id).where(DBBot.workspace_id == data.workspace_id, DBBot.id.in_(data.bot_ids))
@@ -70,7 +77,7 @@ async def create_channel(
     row = DBChannel(
         id=channel_id,
         workspace_id=data.workspace_id,
-        name=data.name,
+        name=name,
         description=data.description,
         bot_ids_json=json.dumps(data.bot_ids)
     )

@@ -190,6 +190,28 @@ class ApprovalGateManager:
             event.set()
         return True
 
+    async def cancel_session_approvals(self, session_id: str):
+        """Denies and releases any pending approval requests for this session."""
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DBApproval).where(
+                DBApproval.session_id == session_id,
+                DBApproval.status == "pending"
+            ))
+            pending_rows = result.scalars().all()
+            for row in pending_rows:
+                row.status = "denied"
+                row.resolved_at = datetime.now(timezone.utc)
+                row.actor = "system"
+                row.user_feedback = "Session was cancelled."
+                self._pending_responses[row.id] = ApprovalResponse(
+                    decision="denied",
+                    user_feedback="Session was cancelled."
+                )
+                event = self._pending_events.get(row.id)
+                if event:
+                    event.set()
+            await db.commit()
+
     async def get_pending_approval(self, session_id: str) -> Optional[ApprovalRequest]:
         async with AsyncSessionLocal() as db:
             stmt = select(DBApproval).where(

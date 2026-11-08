@@ -74,15 +74,16 @@ async def create_bot(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     bot_id = f"bot_{uuid.uuid4().hex[:10]}"
+    name = data.name.strip()
     duplicate = (await db.execute(
-        select(DBBot.id).where(DBBot.workspace_id == data.workspace_id, DBBot.name == data.name)
-    )).scalar_one_or_none()
+        select(DBBot.id).where(DBBot.workspace_id == data.workspace_id, DBBot.name == name)
+    )).scalars().first()
     if duplicate:
-        raise HTTPException(status_code=409, detail=f"A bot named '{data.name}' already exists in this workspace")
+        raise HTTPException(status_code=409, detail=f"A bot named '{name}' already exists in this workspace")
     row = DBBot(
         id=bot_id,
         workspace_id=data.workspace_id,
-        name=data.name,
+        name=name,
         avatar=data.avatar,
         role_tag=data.role_tag,
         description=data.description,
@@ -131,7 +132,18 @@ async def update_bot(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     if data.name is not None:
-        row.name = data.name
+        new_name = data.name.strip()
+        if new_name != row.name:
+            duplicate = (await db.execute(
+                select(DBBot.id).where(
+                    DBBot.workspace_id == row.workspace_id,
+                    DBBot.name == new_name,
+                    DBBot.id != bot_id,
+                )
+            )).scalars().first()
+            if duplicate:
+                raise HTTPException(status_code=409, detail=f"A bot named '{new_name}' already exists in this workspace")
+            row.name = new_name
     if data.avatar is not None:
         row.avatar = data.avatar
     if data.role_tag is not None:
@@ -171,10 +183,22 @@ async def duplicate_bot(
         raise HTTPException(status_code=403, detail="Workspace access denied") from exc
 
     new_id = f"bot_{uuid.uuid4().hex[:10]}"
+    base_name = f"{row.name} (Copy)"
+    dup_name = base_name
+    counter = 1
+    while True:
+        existing = (await db.execute(
+            select(DBBot.id).where(DBBot.workspace_id == row.workspace_id, DBBot.name == dup_name)
+        )).scalars().first()
+        if not existing:
+            break
+        counter += 1
+        dup_name = f"{base_name} {counter}"
+
     dup = DBBot(
         id=new_id,
         workspace_id=row.workspace_id,
-        name=f"{row.name} (Copy)",
+        name=dup_name,
         avatar=row.avatar,
         role_tag=row.role_tag,
         description=row.description,

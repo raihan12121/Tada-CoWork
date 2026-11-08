@@ -110,8 +110,9 @@ export const BotModal: React.FC<BotModalProps> = ({
           {/* Avatar & Name */}
           <div className="flex gap-3">
             <div>
-              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Avatar</label>
+              <label htmlFor="bot-avatar" className="block text-[11px] text-zinc-400 font-medium mb-1">Avatar</label>
               <select
+                id="bot-avatar"
                 value={avatar}
                 onChange={(e) => setAvatar(e.target.value)}
                 className="bg-[#14141a] border border-white/[0.1] rounded-xl px-2.5 py-2 text-base text-white focus:outline-none"
@@ -122,7 +123,7 @@ export const BotModal: React.FC<BotModalProps> = ({
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Specialist Name</label>
+              <label htmlFor="bot-name" className="block text-[11px] text-zinc-400 font-medium mb-1">Specialist Name</label>
               <input
                 type="text"
                 required
@@ -137,8 +138,9 @@ export const BotModal: React.FC<BotModalProps> = ({
           {/* Role Tag & Folder */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Role Title / Tag</label>
+              <label htmlFor="bot-role" className="block text-[11px] text-zinc-400 font-medium mb-1">Role Title / Tag</label>
               <input
+                id="bot-role"
                 type="text"
                 value={roleTag}
                 onChange={(e) => setRoleTag(e.target.value)}
@@ -147,8 +149,9 @@ export const BotModal: React.FC<BotModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] text-zinc-400 font-medium mb-1">Sidebar Folder</label>
+              <label htmlFor="bot-folder" className="block text-[11px] text-zinc-400 font-medium mb-1">Sidebar Folder</label>
               <select
+                id="bot-folder"
                 value={folderName}
                 onChange={(e) => setFolderName(e.target.value)}
                 className="w-full bg-[#14141a] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
@@ -162,7 +165,7 @@ export const BotModal: React.FC<BotModalProps> = ({
 
           {/* Description */}
           <div>
-            <label className="block text-[11px] text-zinc-400 font-medium mb-1">Description & Objective</label>
+            <label htmlFor="bot-desc" className="block text-[11px] text-zinc-400 font-medium mb-1">Description & Objective</label>
             <textarea
               rows={2}
               required

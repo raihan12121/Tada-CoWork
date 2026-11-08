@@ -20,6 +20,7 @@ from app.tools.web_search import WebSearchTool
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
+        self._core_tools: set[str] = set()
         self._register_default_tools()
 
     def _register_default_tools(self):
@@ -50,12 +51,20 @@ class ToolRegistry:
             DelegateSubtaskTool()
         ]
         for t in default_tools:
-            self.register_tool(t)
+            self._tools[t.name] = t
+            self._core_tools.add(t.name)
+
+    def is_core_tool(self, name: str) -> bool:
+        return name in self._core_tools
 
     def register_tool(self, tool: BaseTool):
+        if tool.name in self._core_tools:
+            raise ValueError(f"Cannot overwrite protected core tool '{tool.name}'")
         self._tools[tool.name] = tool
 
     def unregister_tool(self, name: str):
+        if name in self._core_tools:
+            raise ValueError(f"Cannot unregister protected core tool '{name}'")
         self._tools.pop(name, None)
 
     def get_tool(self, name: str) -> Optional[BaseTool]:

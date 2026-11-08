@@ -159,8 +159,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
             <h3 className="text-sm font-bold text-white mb-3">Create Recurring Automation</h3>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
-                <label className="text-xs text-zinc-400 block mb-1">Schedule Name</label>
+                <label htmlFor="schedule-name" className="text-xs text-zinc-400 block mb-1">Schedule Name</label>
                 <input
+                  id="schedule-name"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -170,8 +171,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-400 block mb-1">Cron Expression / Cadence</label>
+                <label htmlFor="schedule-cron" className="text-xs text-zinc-400 block mb-1">Cron Expression / Cadence</label>
                 <select
+                  id="schedule-cron"
                   value={cron}
                   onChange={(e) => setCron(e.target.value)}
                   className="w-full bg-[#16161b] border border-white/[0.1] rounded-lg p-2 text-xs text-white focus:outline-none"
@@ -183,8 +185,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
                 </select>
               </div>
               <div>
-                <label className="text-xs text-zinc-400 block mb-1">Task Prompt Template</label>
+                <label htmlFor="schedule-template" className="text-xs text-zinc-400 block mb-1">Task Prompt Template</label>
                 <textarea
+                  id="schedule-template"
                   value={taskTemplate}
                   onChange={(e) => setTaskTemplate(e.target.value)}
                   placeholder="Task instruction for each run (e.g. 'Compile tickets from past 7 days into an executive spreadsheet and draft notification email')"
@@ -194,8 +197,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({ onSessionCreat
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-400 block mb-1">Granted Web Domains (comma-separated)</label>
+                <label htmlFor="schedule-domains" className="text-xs text-zinc-400 block mb-1">Granted Web Domains (comma-separated)</label>
                 <input
+                  id="schedule-domains"
                   type="text"
                   value={grantedDomains}
                   onChange={(e) => setGrantedDomains(e.target.value)}

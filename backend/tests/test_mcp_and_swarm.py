@@ -47,7 +47,7 @@ async def test_dynamic_mcp_server_lifecycle():
         server = await mcp_manager.register_server(
             McpServerCreate(
                 name="Notion MCP Server",
-                server_url="http://localhost:9999/mcp",
+                server_url="https://mcp.notion.example.com/v1",
                 workspace_id="default",
                 auth_headers={"Authorization": "Bearer notion-test-key"}
             )

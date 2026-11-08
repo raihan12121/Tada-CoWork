@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.core.audit import audit_logger
@@ -21,7 +21,7 @@ from app.core.connector_policy import connector_is_allowed
 from app.core.identity import Principal, require_workspace_access
 from app.core.org_policy import org_policy_manager
 from app.core.safety import safety_engine
-from app.db.session import AsyncSessionLocal, DBSession, DBToolCall
+from app.db.session import AsyncSessionLocal, DBMcpServer, DBSession, DBToolCall
 from app.engine.session_manager import session_manager
 from app.mcp.mcp_manager import mcp_manager
 from app.models.schemas import McpServerCreate, McpServerModel
@@ -67,6 +67,15 @@ async def register_mcp_server(request: Request, payload: McpServerCreate):
 
 @router.post("/servers/{server_id}/sync", response_model=McpServerModel)
 async def sync_mcp_server(request: Request, server_id: str):
+    principal = getattr(request.state, "principal", Principal("anonymous", "default", frozenset({"*"}), frozenset({"local_dev"})))
+    async with AsyncSessionLocal() as db:
+        server = (await db.execute(select(DBMcpServer).where(DBMcpServer.id == server_id))).scalar_one_or_none()
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    try:
+        require_workspace_access(principal, server.workspace_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Workspace access denied") from exc
     res = await mcp_manager.sync_server(server_id)
     if not res:
         raise HTTPException(status_code=404, detail="MCP Server not found")
@@ -75,6 +84,15 @@ async def sync_mcp_server(request: Request, server_id: str):
 
 @router.delete("/servers/{server_id}")
 async def delete_mcp_server(request: Request, server_id: str):
+    principal = getattr(request.state, "principal", Principal("anonymous", "default", frozenset({"*"}), frozenset({"local_dev"})))
+    async with AsyncSessionLocal() as db:
+        server = (await db.execute(select(DBMcpServer).where(DBMcpServer.id == server_id))).scalar_one_or_none()
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    try:
+        require_workspace_access(principal, server.workspace_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Workspace access denied") from exc
     deleted = await mcp_manager.delete_server(server_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="MCP Server not found")

@@ -62,6 +62,7 @@ async def trigger_schedule_now(request: Request, schedule_id: str):
     # Spawns new session using template and starts execution
     session = await session_manager.create_session(SessionCreate(
         task=f"[Scheduled Run: {target.title}] {target.task_template}",
+        workspace_id=target.workspace_id,
         enabled_tools=target.enabled_tools,
         granted_scopes=target.granted_scopes,
         granted_folders=target.granted_folders,

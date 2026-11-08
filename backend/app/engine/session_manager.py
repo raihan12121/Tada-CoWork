@@ -388,8 +388,16 @@ class SessionManager:
         executor = self._active_executors.get(session_id)
         if executor:
             executor.cancel()
+
+        from app.engine.approval_gate import approval_gate_manager
+        await approval_gate_manager.cancel_session_approvals(session_id)
+
+        task = self._background_tasks.pop(session_id, None)
+        if task and not task.done():
+            task.cancel()
+
         async with AsyncSessionLocal() as db:
-            stmt = update(DBSession).where(DBSession.id == session_id).values(status="cancelled")
+            stmt = update(DBSession).where(DBSession.id == session_id).values(status="cancelled", updated_at=datetime.now(timezone.utc))
             await db.execute(stmt)
             await db.execute(
                 update(DBExecutionJob).where(DBExecutionJob.session_id == session_id, DBExecutionJob.status.in_(["queued", "running"])).values(

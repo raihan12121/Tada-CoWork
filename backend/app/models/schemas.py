@@ -257,6 +257,10 @@ class McpServerCreate(BaseModel):
     def validate_server_url(cls, value: str) -> str:
         if not value.lower().startswith(("http://", "https://")):
             raise ValueError("server_url must start with http:// or https://")
+        from app.tools.web_fetch import is_ssrf_safe_url
+        safe, err = is_ssrf_safe_url(value)
+        if not safe:
+            raise ValueError(err or "SSRF protection: server_url resolves to a private or restricted host")
         return value
     auth_headers: Dict[str, str] = Field(default_factory=dict)
 
@@ -313,6 +317,14 @@ class BotCreate(BaseModel):
     enabled_tools: List[str] = Field(default_factory=list)
     individual_memory: List[str] = Field(default_factory=list)
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("name must not be empty or whitespace only")
+        return s
+
 
 class BotUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
@@ -325,6 +337,16 @@ class BotUpdate(BaseModel):
     model: Optional[str] = Field(default=None, max_length=100)
     enabled_tools: Optional[List[str]] = None
     individual_memory: Optional[List[str]] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            s = v.strip()
+            if not s:
+                raise ValueError("name must not be empty or whitespace only")
+            return s
+        return v
 
 
 class BotTemplate(BaseModel):
@@ -353,6 +375,14 @@ class ChannelCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=5000)
     bot_ids: List[str] = Field(default_factory=list)
     workspace_id: str = Field(default="default", max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("name must not be empty or whitespace only")
+        return s
 
 
 class TerminalCommandRequest(BaseModel):

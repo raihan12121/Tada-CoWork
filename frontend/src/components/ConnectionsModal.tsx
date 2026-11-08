@@ -378,10 +378,11 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
 
             <div className="space-y-3">
               <div>
-                <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                <label htmlFor="connector-api-key" className="block text-[11px] font-medium text-zinc-400 mb-1">
                   API Key / OAuth Token (AES-256 Encrypted)
                 </label>
                 <input
+                  id="connector-api-key"
                   type="password"
                   placeholder="sk-..."
                   value={apiKeyInput}
@@ -391,9 +392,9 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ isOpen, onCl
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">
+                <div className="block text-[11px] font-medium text-zinc-400 mb-1.5">
                   Allowed Specialist Bots
-                </label>
+                </div>
                 <div className="space-y-1 max-h-36 overflow-y-auto">
                   {bots.map((b) => (
                     <label key={b.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/[0.04] cursor-pointer text-xs text-zinc-300">

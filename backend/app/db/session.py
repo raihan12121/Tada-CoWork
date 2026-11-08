@@ -338,6 +338,10 @@ async def init_db():
         # Small, dependency-free migration path for the local SQLite runtime.
         # Production deployments should run Alembic migrations instead.
         if settings.DATABASE_URL.startswith("sqlite"):
+            # Enable WAL mode and busy timeout for concurrent read/write throughput
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
+            await conn.execute(text("PRAGMA busy_timeout=10000;"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
             result = await conn.execute(text("PRAGMA table_info(sessions)"))
             existing = {row[1] for row in result.fetchall()}
             additions = {
